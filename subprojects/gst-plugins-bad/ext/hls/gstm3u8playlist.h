@@ -24,7 +24,11 @@
 
 #include <glib.h>
 
+
 G_BEGIN_DECLS
+
+extern const int RIXJOB_GSTM3U8PLAYLIST_H_PATCH_VERSION;
+extern const int RIXJOB_GSTM3U8PLAYLIST_C_PATCH_VERSION;
 
 typedef struct _GstM3U8Playlist GstM3U8Playlist;
 
@@ -35,6 +39,8 @@ struct _GstM3U8Playlist
   gint type;
   gboolean end_list;
   guint sequence_number;
+  const gchar *key_location;
+  gint encryption_method;
 
   /*< Private >*/
   GQueue *entries;
