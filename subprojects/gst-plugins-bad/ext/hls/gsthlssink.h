@@ -55,6 +55,10 @@ struct _GstHlsSink
   gboolean waiting_fku;
   GstClockTime last_running_time;
   GstM3U8PlaylistRenderState state;
+  gint encryption_method;
+  gchar *key_location;
+  gchar *key_uri;
+  unsigned char key[16];
 };
 
 struct _GstHlsSinkClass
