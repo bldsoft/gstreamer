@@ -62,6 +62,14 @@ GST_DEBUG_CATEGORY (gst_hls_demux_debug);
 #define GST_M3U8_CLIENT_LOCK(l) /* FIXME */
 #define GST_M3U8_CLIENT_UNLOCK(l)       /* FIXME */
 
+enum
+{
+  PROP_0,
+  PROP_GSTHLSDEMUX_C_PATCH_VERSION,
+  PROP_M3U8_H_PATCH_VERSION,
+  PROP_M3U8_C_PATCH_VERSION
+};
+
 /* GObject */
 static void gst_hls_demux_finalize (GObject * obj);
 
@@ -117,11 +125,15 @@ static gboolean gst_hls_demux_get_live_seek_range (GstAdaptiveDemux * demux,
 static GstM3U8 *gst_hls_demux_stream_get_m3u8 (GstHLSDemuxStream * hls_stream);
 static void gst_hls_demux_set_current_variant (GstHLSDemux * hlsdemux,
     GstHLSVariantStream * variant);
+static void gst_hls_demux_get_property(GObject * object, guint prop_id,
+    GValue * value, GParamSpec * spec);
 
 #define gst_hls_demux_parent_class parent_class
 G_DEFINE_TYPE (GstHLSDemux, gst_hls_demux, GST_TYPE_ADAPTIVE_DEMUX);
 GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (hlsdemux, "hlsdemux", GST_RANK_PRIMARY,
     GST_TYPE_HLS_DEMUX, hls_element_init (plugin));
+
+const int RIXJOB_GSTHLSDEMUX_C_PATCH_VERSION = 1;
 
 static void
 gst_hls_demux_finalize (GObject * obj)
@@ -150,6 +162,7 @@ gst_hls_demux_class_init (GstHLSDemuxClass * klass)
   adaptivedemux_class = (GstAdaptiveDemuxClass *) klass;
 
   gobject_class->finalize = gst_hls_demux_finalize;
+  gobject_class->get_property = gst_hls_demux_get_property;
 
   element_class->change_state = GST_DEBUG_FUNCPTR (gst_hls_demux_change_state);
 
@@ -159,7 +172,7 @@ gst_hls_demux_class_init (GstHLSDemuxClass * klass)
   gst_element_class_set_static_metadata (element_class,
       "HLS Demuxer",
       "Codec/Demuxer/Adaptive",
-      "HTTP Live Streaming demuxer",
+      "HTTP Live Streaming demuxer (patched)",
       "Marc-Andre Lureau <marcandre.lureau@gmail.com>\n"
       "Andoni Morales Alastruey <ylatuya@gmail.com>");
 
@@ -187,6 +200,24 @@ gst_hls_demux_class_init (GstHLSDemuxClass * klass)
 
   GST_DEBUG_CATEGORY_INIT (gst_hls_demux_debug, "hlsdemux", 0,
       "hlsdemux element");
+
+  g_object_class_install_property (gobject_class,
+      PROP_GSTHLSDEMUX_C_PATCH_VERSION,
+      g_param_spec_uint("gsthlsdemux-c-patch-version",
+          "Vesion of patch for gsthlsdemux.c file",
+          "gsthlsdemux.c patch version",
+          0, G_MAXUINT, RIXJOB_GSTHLSDEMUX_C_PATCH_VERSION,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_M3U8_H_PATCH_VERSION,
+      g_param_spec_uint("m3u8-h-patch-version",
+          "Version of patch for m3u8.h file", "m3u8.h patch version",
+          0, G_MAXUINT, RIXJOB_M3U8_H_PATCH_VERSION,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property(gobject_class, PROP_M3U8_C_PATCH_VERSION,
+      g_param_spec_uint(
+          "m3u8-c-patch-version", "Version of patch for m3u8.c file",
+          "m3u8.c patch version", 0, G_MAXUINT, RIXJOB_M3U8_C_PATCH_VERSION,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
 }
 
 static void
@@ -1391,7 +1422,7 @@ static gint
 gst_hls_demux_find_variant_match (const GstHLSVariantStream * a,
     const GstHLSVariantStream * b)
 {
-  if (g_strcmp0 (a->name, b->name) == 0 &&
+  if (gst_m3u8_compare_uri_without_tokens (a->name, b->name) == 0 &&
       a->bandwidth == b->bandwidth &&
       a->program_id == b->program_id &&
       g_strcmp0 (a->codecs, b->codecs) == 0 &&
@@ -1411,6 +1442,7 @@ gst_hls_demux_update_variant_playlist (GstHLSDemux * hlsdemux, gchar * data,
 {
   GstHLSMasterPlaylist *new_master, *old;
   gboolean ret = FALSE;
+  gboolean current_variant_matched = TRUE;
   GList *l, *unmatched_lists;
   GstHLSVariantStream *new_variant;
 
@@ -1460,6 +1492,7 @@ gst_hls_demux_update_variant_playlist (GstHLSDemux * hlsdemux, gchar * data,
     for (l = unmatched_lists; l != NULL; l = l->next) {
       if (l->data == hlsdemux->current_variant) {
         GST_WARNING ("Unable to match current playlist");
+        current_variant_matched = FALSE;
       }
     }
 
@@ -1472,7 +1505,7 @@ gst_hls_demux_update_variant_playlist (GstHLSDemux * hlsdemux, gchar * data,
   // FIXME: check all this and also switch of variants, if anything needs updating
   hlsdemux->master = new_master;
 
-  if (hlsdemux->current_variant == NULL) {
+  if (hlsdemux->current_variant == NULL || !current_variant_matched) {
     new_variant = new_master->default_variant;
   } else {
     /* Find the same variant in the new playlist */
@@ -1543,6 +1576,27 @@ gst_hls_demux_update_rendition_manifest (GstHLSDemux * demux,
   }
 
   return TRUE;
+}
+
+static gboolean
+gst_hls_demux_stream_update_playlist (GstHLSDemux * hlsdemux, GstM3U8 * m3u8)
+{
+  GList *walk;
+  GstAdaptiveDemux *demux = GST_ADAPTIVE_DEMUX (hlsdemux);
+
+  for (walk = demux->streams; walk; walk = g_list_next (walk)) {
+    GstHLSDemuxStream *hls_stream = GST_HLS_DEMUX_STREAM_CAST (walk->data);
+    GstM3U8 *old = gst_hls_demux_stream_get_m3u8 (hls_stream);
+
+    if (old && old->uri && gst_m3u8_compare_uri_without_tokens(old->uri, m3u8->uri) == 0) {
+      GstAdaptiveDemuxStream *stream = GST_ADAPTIVE_DEMUX_STREAM_CAST (hls_stream);
+      GST_DEBUG_OBJECT (stream->pad, "Found matching stream");
+      gst_m3u8_unref (old);
+      hls_stream->playlist = gst_m3u8_ref (m3u8);
+      return TRUE;
+    }
+  }
+  return FALSE;
 }
 
 static gboolean
@@ -1653,6 +1707,12 @@ retry:
     return FALSE;
   }
 
+  if (gst_m3u8_is_live (m3u8) && main_checked && update) {
+    GST_DEBUG_OBJECT (demux, "master playlist reloaded, try to update m3u8 in variant stream");
+    if (!gst_hls_demux_stream_update_playlist (demux, m3u8))
+      GST_WARNING_OBJECT (demux, "Couldn't find matching stream");
+  }
+
   for (i = 0; i < GST_HLS_N_MEDIA_TYPES; ++i) {
     GList *mlist = demux->current_variant->media[i];
 
@@ -1671,6 +1731,13 @@ retry:
 
       if (!gst_hls_demux_update_rendition_manifest (demux, media, err))
         return FALSE;
+
+      if (gst_m3u8_is_live(m3u8) && main_checked && update) {
+        GST_DEBUG_OBJECT(demux, "master playlist realoaded, try to update m3u8 "
+                                "in rendition stream");
+        if (!gst_hls_demux_stream_update_playlist(demux, media->playlist))
+          GST_WARNING_OBJECT(demux, "Couldn't find matching stream");
+      }
 
       mlist = mlist->next;
     }
@@ -2070,4 +2137,24 @@ gst_hls_demux_get_live_seek_range (GstAdaptiveDemux * demux, gint64 * start,
   }
 
   return ret;
+}
+
+static void
+gst_hls_demux_get_property (GObject * object, guint prop_id, GValue * value,
+    GParamSpec * spec)
+{
+  switch (prop_id) {
+    case PROP_GSTHLSDEMUX_C_PATCH_VERSION:
+      g_value_set_uint (value, RIXJOB_GSTHLSDEMUX_C_PATCH_VERSION);
+      break;
+    case PROP_M3U8_H_PATCH_VERSION:
+      g_value_set_uint (value, RIXJOB_M3U8_H_PATCH_VERSION);
+      break;
+    case PROP_M3U8_C_PATCH_VERSION:
+      g_value_set_uint (value, RIXJOB_M3U8_C_PATCH_VERSION);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, spec);
+      break;
+  }
 }
