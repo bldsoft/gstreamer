@@ -20,11 +20,15 @@
  */
 
 #include <glib.h>
+#include <math.h>
 
 #include "gstm3u8playlist.h"
 #include "gsthlselements.h"
 
 #define GST_CAT_DEFAULT hls_debug
+
+const int RIXJOB_GSTM3U8PLAYLIST_H_PATCH_VERSION = 1;
+const int RIXJOB_GSTM3U8PLAYLIST_C_PATCH_VERSION = 1;
 
 enum
 {
@@ -78,6 +82,8 @@ gst_m3u8_playlist_new (guint version, guint window_size)
   playlist->window_size = window_size;
   playlist->type = GST_M3U8_PLAYLIST_TYPE_EVENT;
   playlist->end_list = FALSE;
+  playlist->encryption_method = 0;
+  playlist->key_location = "playlist.key";
   playlist->entries = g_queue_new ();
 
   return playlist;
@@ -119,7 +125,7 @@ gst_m3u8_playlist_add_entry (GstM3U8Playlist * playlist,
     }
   }
 
-  playlist->sequence_number = index + 1;
+  playlist->sequence_number = index;
   g_queue_push_tail (playlist->entries, entry);
 
   return TRUE;
@@ -138,7 +144,18 @@ gst_m3u8_playlist_target_duration (GstM3U8Playlist * playlist)
       target_duration = entry->duration;
   }
 
-  return (guint) ((target_duration + 500 * GST_MSECOND) / GST_SECOND);
+  return (guint) ceil((target_duration + 500.0 * GST_MSECOND) / GST_SECOND);
+}
+
+static const gchar *
+encryption_method_to_string (gint method)
+{
+  static const gchar * encryption_methods[] = {
+    "NONE",
+    "AES-128"
+  };
+  gsize nmethods = sizeof(encryption_methods) / sizeof(encryption_methods[0]);
+  return method >= 0 && method < nmethods ? encryption_methods[method] : NULL;
 }
 
 gchar *
@@ -159,11 +176,17 @@ gst_m3u8_playlist_render (GstM3U8Playlist * playlist)
 
   g_string_append_printf (playlist_str, "#EXT-X-TARGETDURATION:%u\n",
       gst_m3u8_playlist_target_duration (playlist));
+
+  if (playlist->encryption_method && playlist->key_location) {
+    g_string_append_printf (playlist_str, "#EXT-X-KEY:METHOD=%s,URI=\"%s\"\n",
+      encryption_method_to_string(playlist->encryption_method),
+      playlist->key_location);
+  }
+
   g_string_append (playlist_str, "\n");
 
   /* Entries */
   for (l = playlist->entries->head; l != NULL; l = l->next) {
-    gchar buf[G_ASCII_DTOSTR_BUF_SIZE];
     GstM3U8Entry *entry = l->data;
 
     if (entry->discontinuous)
@@ -174,8 +197,8 @@ gst_m3u8_playlist_render (GstM3U8Playlist * playlist)
           (gint) ((entry->duration + 500 * GST_MSECOND) / GST_SECOND),
           entry->title ? entry->title : "");
     } else {
-      g_string_append_printf (playlist_str, "#EXTINF:%s,%s\n",
-          g_ascii_dtostr (buf, sizeof (buf), entry->duration / GST_SECOND),
+      g_string_append_printf (playlist_str, "#EXTINF:%.6f,%s\n",
+          entry->duration / GST_SECOND,
           entry->title ? entry->title : "");
     }
 
