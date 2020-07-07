@@ -2392,6 +2392,13 @@ gst_ffmpeg_codecid_to_caps (enum AVCodecID codec_id,
 
     /* set private data */
     if (context && context->extradata_size > 0) {
+#if GST_CHECK_VERSION(1, 17, 0)
+      GstBuffer *data = gst_buffer_new_and_alloc (context->extradata_size);
+
+      gst_buffer_fill (data, 0, context->extradata, context->extradata_size);
+      gst_caps_set_simple (caps, "codec_data", GST_TYPE_BUFFER, data, NULL);
+      gst_buffer_unref (data);
+#else
       AVIOContext* pb = NULL;
       int res = avio_open_dyn_buf(&pb);
       if (res == 0) {
@@ -2406,6 +2413,7 @@ gst_ffmpeg_codecid_to_caps (enum AVCodecID codec_id,
           av_free(out);
         }
       }
+#endif
     }
 
     GST_LOG ("caps for codec_id=%d: %" GST_PTR_FORMAT, codec_id, caps);
