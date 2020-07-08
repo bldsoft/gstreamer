@@ -61,6 +61,8 @@ GST_DEBUG_CATEGORY_STATIC (gst_hls_sink_debug);
 #define DEFAULT_ENCRYPTION_METHOD 0     /* no encryption */
 #define DEFAULT_KEY_LOCATION "playlist.key"
 #define DEFAULT_KEY_URI "playlist.key"
+#define DEFAULT_PROGRAM_DATE_TIME_MODE GST_HLS_PROGRAM_DATE_TIME_NEVER
+#define DEFAULT_PROGRAM_DATE_TIME_SHIFT 0
 
 #define GST_M3U8_PLAYLIST_VERSION 3
 
@@ -70,14 +72,14 @@ GST_DEBUG_CATEGORY_STATIC (gst_hls_sink_debug);
 
 #if defined(HAVE_OPENSSL)
 # if OPENSSL_VERSION_NUMBER < 0x10100000L
-  typedef EVP_CIPHER_CTX crypto_ctx_t;
+typedef EVP_CIPHER_CTX crypto_ctx_t;
 # else
-  typedef EVP_CIPHER_CTX* crypto_ctx_t;
+typedef EVP_CIPHER_CTX *crypto_ctx_t;
 # endif
 #elif defined(HAVE_NETTLE)
-  typedef struct CBC_CTX (struct aes_ctx, AES_BLOCK_SIZE) crypto_ctx_t;
+typedef struct CBC_CTX (struct aes_ctx, AES_BLOCK_SIZE) crypto_ctx_t;
 #else
-  typedef gcry_cipher_hd_t crypto_ctx_t;
+typedef gcry_cipher_hd_t crypto_ctx_t;
 #endif
 
 enum
@@ -95,11 +97,13 @@ enum
   PROP_GSTM3U8PLAYLIST_H_PATCH_VERSION,
   PROP_GSTM3U8PLAYLIST_C_PATCH_VERSION,
   PROP_GSTHLSSINK_H_PATCH_VERSION,
-  PROP_GSTHLSSINK_C_PATCH_VERSION
+  PROP_GSTHLSSINK_C_PATCH_VERSION,
+  PROP_PROGRAM_DATE_TIME_MODE,
+  PROP_PROGRAM_DATE_TIME_SHIFT,
 };
 
-const int RIXJOB_GSTHLSSINK_H_PATCH_VERSION = 1;
-const int RIXJOB_GSTHLSSINK_C_PATCH_VERSION = 1;
+const int RIXJOB_GSTHLSSINK_H_PATCH_VERSION = 2;
+const int RIXJOB_GSTHLSSINK_C_PATCH_VERSION = 2;
 
 static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
@@ -130,13 +134,13 @@ static gboolean schedule_next_key_unit (GstHlsSink * sink);
 static GstFlowReturn gst_hls_sink_chain_list (GstPad * pad, GstObject * parent,
     GstBufferList * list);
 static void gst_hls_sink_open_key (GstHlsSink * sink);
-static void gst_hls_sink_create_iv (GstHlsSink * sink, unsigned char * iv);
+static void gst_hls_sink_create_iv (GstHlsSink * sink, unsigned char *iv);
 static gboolean gst_hls_sink_init_encrypting (GstHlsSink * sink,
     crypto_ctx_t * hd);
 static void gst_hls_sink_encrypt_chunk (GstHlsSink * sink,
     const gchar * filename);
 #if !defined(HAVE_OPENSSL)
-static int add_padding (unsigned char * buf, int data_size);
+static int add_padding (unsigned char *buf, int data_size);
 #endif
 
 enum
@@ -185,6 +189,8 @@ gst_hls_sink_finalize (GObject * object)
   g_free (sink->key_location);
   if (sink->playlist)
     gst_m3u8_playlist_free (sink->playlist);
+  if (sink->start_time)
+    g_date_time_unref (sink->start_time);
 
   G_OBJECT_CLASS (parent_class)->finalize ((GObject *) sink);
 }
@@ -263,32 +269,43 @@ gst_hls_sink_class_init (GstHlsSinkClass * klass)
 
   g_object_class_install_property (gobject_class,
       PROP_GSTM3U8PLAYLIST_H_PATCH_VERSION,
-      g_param_spec_uint("gstm3u8playlist-h-patch-version",
+      g_param_spec_uint ("gstm3u8playlist-h-patch-version",
           "Version of pathch for gstm3u8playlist.h file",
           "gstm3u8playlist.h patch version",
           0, G_MAXUINT, RIXJOB_GSTM3U8PLAYLIST_H_PATCH_VERSION,
           G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (gobject_class,
       PROP_GSTM3U8PLAYLIST_C_PATCH_VERSION,
-      g_param_spec_uint("gstm3u8playlist-c-patch-version",
+      g_param_spec_uint ("gstm3u8playlist-c-patch-version",
           "Version of patch for gstm3u8playlist.c file",
           "gstm3u8playlist.c patch version",
           0, G_MAXUINT, RIXJOB_GSTM3U8PLAYLIST_C_PATCH_VERSION,
           G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
-  g_object_class_install_property(gobject_class,
-                                  PROP_GSTHLSSINK_H_PATCH_VERSION,
-                                  g_param_spec_uint("gsthlssink-h-patch-version",
-                                                    "Version of patch for gsthlssink.h file",
-                                                    "gsthlssink.h patch version",
-                                                    0, G_MAXUINT, RIXJOB_GSTHLSSINK_H_PATCH_VERSION,
-                                                    G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
-  g_object_class_install_property(
-      gobject_class, PROP_GSTHLSSINK_C_PATCH_VERSION,
-      g_param_spec_uint("gsthlssink-c-patch-version",
-                        "Version of patch for gsthlssink.c file",
-                        "gsthlssink.c patch version", 0, G_MAXUINT,
-                        RIXJOB_GSTHLSSINK_C_PATCH_VERSION,
-                        G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class,
+      PROP_GSTHLSSINK_H_PATCH_VERSION,
+      g_param_spec_uint ("gsthlssink-h-patch-version",
+          "Version of patch for gsthlssink.h file",
+          "gsthlssink.h patch version",
+          0, G_MAXUINT, RIXJOB_GSTHLSSINK_H_PATCH_VERSION,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class,
+      PROP_GSTHLSSINK_C_PATCH_VERSION,
+      g_param_spec_uint ("gsthlssink-c-patch-version",
+          "Version of patch for gsthlssink.c file",
+          "gsthlssink.c patch version", 0, G_MAXUINT,
+          RIXJOB_GSTHLSSINK_C_PATCH_VERSION,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_PROGRAM_DATE_TIME_MODE,
+      g_param_spec_enum ("program-date-time-mode",
+          "Mode for #EXT-X-PROGRAM-DATE-TIME tag",
+          "When to show #EXT-X-PROGRAM-DATE-TIME tag",
+          GST_HLS_PROGRAM_DATE_TIME_MODE_TYPE, DEFAULT_PROGRAM_DATE_TIME_MODE,
+          G_PARAM_READWRITE));
+  g_object_class_install_property (gobject_class, PROP_PROGRAM_DATE_TIME_SHIFT,
+      g_param_spec_int64 ("program-date-time-shift", "PROGRAM-DATE-TIME shift",
+          "PROGRAM-DATE-TIME shift in nanoseconds", G_MININT64, G_MAXINT64,
+          DEFAULT_PROGRAM_DATE_TIME_SHIFT,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static void
@@ -333,6 +350,10 @@ gst_hls_sink_reset (GstHlsSink * sink)
     gst_m3u8_playlist_free (sink->playlist);
   sink->playlist =
       gst_m3u8_playlist_new (GST_M3U8_PLAYLIST_VERSION, sink->playlist_length);
+  if (sink->start_time) {
+    g_date_time_unref (sink->start_time);
+    sink->start_time = NULL;
+  }
 
   sink->state = GST_M3U8_PLAYLIST_RENDER_INIT;
 }
@@ -377,10 +398,10 @@ missing_element:
 static void
 gst_hls_sink_open_key (GstHlsSink * sink)
 {
-  FILE* key_file = fopen (sink->key_location, "rb");
+  FILE *key_file = fopen (sink->key_location, "rb");
   if (!key_file) {
     GST_ERROR_OBJECT (sink, "failed to open encryption key %s",
-                      sink->key_location);
+        sink->key_location);
     return;
   }
   if (fread (sink->key, 1, AES_BLOCK_SIZE, key_file) != AES_BLOCK_SIZE) {
@@ -390,7 +411,7 @@ gst_hls_sink_open_key (GstHlsSink * sink)
 }
 
 static void
-gst_hls_sink_create_iv (GstHlsSink * sink, unsigned char * iv)
+gst_hls_sink_create_iv (GstHlsSink * sink, unsigned char *iv)
 {
   guint index_be = GUINT_TO_BE (sink->index);
   unsigned char *raw = (unsigned char *) &index_be;
@@ -402,7 +423,7 @@ gst_hls_sink_create_iv (GstHlsSink * sink, unsigned char * iv)
 static gboolean
 gst_hls_sink_init_encrypting (GstHlsSink * sink, crypto_ctx_t * hd)
 {
-  unsigned char iv[AES_BLOCK_SIZE] = {0};
+  unsigned char iv[AES_BLOCK_SIZE] = { 0 };
   gst_hls_sink_create_iv (sink, iv);
 
 #if defined(HAVE_OPENSSL)
@@ -432,7 +453,7 @@ gst_hls_sink_init_encrypting (GstHlsSink * sink, crypto_ctx_t * hd)
         gcry_strsource (err), gcry_strerror (err));
     return FALSE;
   }
-  
+
   err = gcry_cipher_setiv (*hd, iv, sizeof (iv));
   if (err) {
     GST_ERROR_OBJECT (sink, "failed to set iv for cipher: %s / %s",
@@ -445,7 +466,7 @@ gst_hls_sink_init_encrypting (GstHlsSink * sink, crypto_ctx_t * hd)
 
 #if !defined (HAVE_OPENSSL)
 static int
-add_padding (unsigned char * buf, int size)
+add_padding (unsigned char *buf, int size)
 {
   int padding = AES_BLOCK_SIZE - size % AES_BLOCK_SIZE;
   for (int i = 0; i != padding; ++i)
@@ -490,14 +511,13 @@ gst_hls_sink_encrypt_chunk (GstHlsSink * sink, const gchar * filename)
   encrypted = fopen (encrypted_chunk_path, "wb");
   if (!chunk || !encrypted) {
     GST_ERROR_OBJECT (sink, "failed to open %s: %s",
-                      (!chunk ? filename : encrypted_chunk_path),
-                      strerror (errno));
+        (!chunk ? filename : encrypted_chunk_path), strerror (errno));
     goto cleanup;
   }
 
   if (stat (filename, &stats) < 0) {
     GST_ERROR_OBJECT (sink, "failed to get stats for %s: %s", filename,
-                     strerror (errno));
+        strerror (errno));
     goto cleanup;
   }
   in = malloc (stats.st_size + AES_BLOCK_SIZE);
@@ -505,10 +525,9 @@ gst_hls_sink_encrypt_chunk (GstHlsSink * sink, const gchar * filename)
   size = fread (in, 1, stats.st_size, chunk);
   if (size == 0 && ferror (chunk)) {
     GST_ERROR_OBJECT (sink, "failed to read from chunk %s: %s", filename,
-                     strerror (errno));
+        strerror (errno));
     goto cleanup;
   }
-
 #if !defined(HAVE_OPENSSL)
   final_size = add_padding (in, size);
 #endif
@@ -519,13 +538,13 @@ gst_hls_sink_encrypt_chunk (GstHlsSink * sink, const gchar * filename)
   EVP_EncryptFinal_ex (ctx, out + size, &final_size);
   final_size += size;
 #elif defined(HAVE_NETTLE)
-  CBC_ENCRYPT(&aes_ctx, aes_encrypt, final_size, out, in);
+  CBC_ENCRYPT (&aes_ctx, aes_encrypt, final_size, out, in);
 #else
-  err = gcry_cipher_encrypt(aes_ctx, out, stats.st_size + AES_BLOCK_SIZE, in,
-                            final_size);
+  err = gcry_cipher_encrypt (aes_ctx, out, stats.st_size + AES_BLOCK_SIZE, in,
+      final_size);
   if (err) {
     GST_ERROR_OBJECT (sink, "failed to encrypt buffer: %s / %s",
-                     gcry_strsource (err), gcry_strerror (err));
+        gcry_strsource (err), gcry_strerror (err));
     goto cleanup;
   }
 #endif
@@ -537,7 +556,7 @@ gst_hls_sink_encrypt_chunk (GstHlsSink * sink, const gchar * filename)
 
   if (rename (encrypted_chunk_path, filename) < 0)
     GST_ERROR_OBJECT (sink, "failed to rename encrypted chunk: %s",
-                     strerror (errno));
+        strerror (errno));
 
 cleanup:
   g_free (encrypted_chunk_path);
@@ -594,6 +613,8 @@ gst_hls_sink_handle_message (GstBin * bin, GstMessage * message)
       gboolean discont = FALSE;
       gchar *entry_location;
       const GstStructure *structure;
+      GDateTime *program_date_time;
+      double chunk_time;
 
       structure = gst_message_get_structure (message);
       if (strcmp (gst_structure_get_name (structure), "GstMultiFileSink"))
@@ -602,6 +623,12 @@ gst_hls_sink_handle_message (GstBin * bin, GstMessage * message)
       filename = gst_structure_get_string (structure, "filename");
       gst_structure_get_clock_time (structure, "running-time", &running_time);
       duration = running_time - sink->last_running_time;
+
+      chunk_time = sink->last_running_time / (double) GST_SECOND +
+          sink->program_date_time_shift / (double) GST_SECOND;
+      program_date_time = g_date_time_add_seconds (sink->start_time,
+          chunk_time);
+
       sink->last_running_time = running_time;
 
       GST_INFO_OBJECT (sink, "COUNT %d", sink->index);
@@ -613,8 +640,8 @@ gst_hls_sink_handle_message (GstBin * bin, GstMessage * message)
         g_free (name);
       }
 
-      gst_m3u8_playlist_add_entry (sink->playlist, entry_location,
-          NULL, duration, sink->index, discont);
+      gst_m3u8_playlist_add_entry (sink->playlist, entry_location, NULL,
+          duration, sink->index, discont, program_date_time);
       g_free (entry_location);
 
       if (sink->encryption_method != GST_HLS_SINK_ENC_NONE)
@@ -662,10 +689,13 @@ gst_hls_sink_change_state (GstElement * element, GstStateChange trans)
         return GST_STATE_CHANGE_FAILURE;
       }
       if (sink->encryption_method != GST_HLS_SINK_ENC_NONE) {
-        gst_hls_sink_open_key(sink);
+        gst_hls_sink_open_key (sink);
       }
       break;
     case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
+      if (sink->start_time)
+        g_date_time_unref (sink->start_time);
+      sink->start_time = g_date_time_new_now_local ();
       break;
     default:
       break;
@@ -744,6 +774,12 @@ gst_hls_sink_set_property (GObject * object, guint prop_id,
       sink->key_uri = g_value_dup_string (value);
       sink->playlist->key_location = sink->key_uri;
       break;
+    case PROP_PROGRAM_DATE_TIME_MODE:
+      sink->playlist->program_date_time_mode = g_value_get_enum (value);
+      break;
+    case PROP_PROGRAM_DATE_TIME_SHIFT:
+      sink->program_date_time_shift = g_value_get_int64 (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -795,6 +831,12 @@ gst_hls_sink_get_property (GObject * object, guint prop_id,
       break;
     case PROP_GSTHLSSINK_C_PATCH_VERSION:
       g_value_set_uint (value, RIXJOB_GSTHLSSINK_C_PATCH_VERSION);
+      break;
+    case PROP_PROGRAM_DATE_TIME_MODE:
+      g_value_set_enum (value, sink->playlist->program_date_time_mode);
+      break;
+    case PROP_PROGRAM_DATE_TIME_SHIFT:
+      g_value_set_int64 (value, sink->program_date_time_shift);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

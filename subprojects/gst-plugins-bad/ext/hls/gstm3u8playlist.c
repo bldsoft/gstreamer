@@ -27,14 +27,34 @@
 
 #define GST_CAT_DEFAULT hls_debug
 
-const int RIXJOB_GSTM3U8PLAYLIST_H_PATCH_VERSION = 1;
-const int RIXJOB_GSTM3U8PLAYLIST_C_PATCH_VERSION = 1;
+const int RIXJOB_GSTM3U8PLAYLIST_H_PATCH_VERSION = 2;
+const int RIXJOB_GSTM3U8PLAYLIST_C_PATCH_VERSION = 2;
 
 enum
 {
   GST_M3U8_PLAYLIST_TYPE_EVENT,
   GST_M3U8_PLAYLIST_TYPE_VOD,
 };
+
+GType
+gst_hls_program_date_time_mode_get_type (void)
+{
+  static GType program_date_time_mode = 0;
+  static const GEnumValue program_date_time_modes[] = {
+    {GST_HLS_PROGRAM_DATE_TIME_NEVER, "Don't show tag", "never"},
+    {GST_HLS_PROGRAM_DATE_TIME_FIRST_CHUNK, "Show only for first chunk",
+        "first"},
+    {GST_HLS_PROGRAM_DATE_TIME_ALL_CHUNKS, "Show for each chunk", "all"},
+    {0, NULL, NULL}
+  };
+
+  if (!program_date_time_mode)
+    program_date_time_mode =
+        g_enum_register_static ("GstHlsSinkProgramDateMode",
+        program_date_time_modes);
+
+  return program_date_time_mode;
+}
 
 typedef struct _GstM3U8Entry GstM3U8Entry;
 
@@ -44,11 +64,12 @@ struct _GstM3U8Entry
   gchar *title;
   gchar *url;
   gboolean discontinuous;
+  GDateTime *program_date_time;
 };
 
 static GstM3U8Entry *
 gst_m3u8_entry_new (const gchar * url, const gchar * title,
-    gfloat duration, gboolean discontinuous)
+    gfloat duration, gboolean discontinuous, GDateTime * program_date_time)
 {
   GstM3U8Entry *entry;
 
@@ -59,6 +80,8 @@ gst_m3u8_entry_new (const gchar * url, const gchar * title,
   entry->title = g_strdup (title);
   entry->duration = duration;
   entry->discontinuous = discontinuous;
+  entry->program_date_time = program_date_time;
+
   return entry;
 }
 
@@ -69,6 +92,7 @@ gst_m3u8_entry_free (GstM3U8Entry * entry)
 
   g_free (entry->url);
   g_free (entry->title);
+  g_date_time_unref (entry->program_date_time);
   g_free (entry);
 }
 
@@ -85,6 +109,7 @@ gst_m3u8_playlist_new (guint version, guint window_size)
   playlist->encryption_method = 0;
   playlist->key_location = "playlist.key";
   playlist->entries = g_queue_new ();
+  playlist->program_date_time_mode = GST_HLS_PROGRAM_DATE_TIME_ALL_CHUNKS;
 
   return playlist;
 }
@@ -101,9 +126,9 @@ gst_m3u8_playlist_free (GstM3U8Playlist * playlist)
 
 
 gboolean
-gst_m3u8_playlist_add_entry (GstM3U8Playlist * playlist,
-    const gchar * url, const gchar * title,
-    gfloat duration, guint index, gboolean discontinuous)
+gst_m3u8_playlist_add_entry (GstM3U8Playlist * playlist, const gchar * url,
+    const gchar * title, gfloat duration, guint index, gboolean discontinuous,
+    GDateTime * program_date_time)
 {
   GstM3U8Entry *entry;
 
@@ -113,7 +138,8 @@ gst_m3u8_playlist_add_entry (GstM3U8Playlist * playlist,
   if (playlist->type == GST_M3U8_PLAYLIST_TYPE_VOD)
     return FALSE;
 
-  entry = gst_m3u8_entry_new (url, title, duration, discontinuous);
+  entry = gst_m3u8_entry_new (url, title, duration, discontinuous,
+      program_date_time);
 
   if (playlist->window_size > 0) {
     /* Delete old entries from the playlist */
@@ -144,18 +170,47 @@ gst_m3u8_playlist_target_duration (GstM3U8Playlist * playlist)
       target_duration = entry->duration;
   }
 
-  return (guint) ceil((target_duration + 500.0 * GST_MSECOND) / GST_SECOND);
+  return (guint) ceil ((target_duration + 500.0 * GST_MSECOND) / GST_SECOND);
 }
 
 static const gchar *
 encryption_method_to_string (gint method)
 {
-  static const gchar * encryption_methods[] = {
+  static const gchar *encryption_methods[] = {
     "NONE",
     "AES-128"
   };
-  gsize nmethods = sizeof(encryption_methods) / sizeof(encryption_methods[0]);
+  gsize nmethods = sizeof (encryption_methods) / sizeof (encryption_methods[0]);
   return method >= 0 && method < nmethods ? encryption_methods[method] : NULL;
+}
+
+static void
+format_program_date_time (GstM3U8Playlist * playlist, GstM3U8Entry * entry,
+    GString * playlist_str)
+{
+  gchar *time_iso8601 = NULL;
+#if !GLIB_CHECK_VERSION (2, 62, 0)
+  GTimeVal timeval = { };
+#endif
+
+  if (playlist->program_date_time_mode == GST_HLS_PROGRAM_DATE_TIME_NEVER)
+    return;
+  if (playlist->program_date_time_mode == GST_HLS_PROGRAM_DATE_TIME_FIRST_CHUNK
+      && entry != playlist->entries->head->data && !entry->discontinuous)
+    return;
+
+#if GLIB_CHECK_VERSION(2, 62, 0)
+  time_iso8601 = g_date_time_format_iso8601 (entry->program_date_time)
+#else
+  if (g_date_time_to_timeval (entry->program_date_time, &timeval))
+    time_iso8601 = g_time_val_to_iso8601 (&timeval);
+#endif
+
+  if (time_iso8601)
+    g_string_append_printf (playlist_str, "#EXT-X-PROGRAM-DATE-TIME:%s\n",
+        time_iso8601);
+
+  g_free (time_iso8601);
 }
 
 gchar *
@@ -179,8 +234,8 @@ gst_m3u8_playlist_render (GstM3U8Playlist * playlist)
 
   if (playlist->encryption_method && playlist->key_location) {
     g_string_append_printf (playlist_str, "#EXT-X-KEY:METHOD=%s,URI=\"%s\"\n",
-      encryption_method_to_string(playlist->encryption_method),
-      playlist->key_location);
+        encryption_method_to_string (playlist->encryption_method),
+        playlist->key_location);
   }
 
   g_string_append (playlist_str, "\n");
@@ -192,14 +247,16 @@ gst_m3u8_playlist_render (GstM3U8Playlist * playlist)
     if (entry->discontinuous)
       g_string_append (playlist_str, "#EXT-X-DISCONTINUITY\n");
 
+    format_program_date_time (playlist, entry, playlist_str);
+
     if (playlist->version < 3) {
       g_string_append_printf (playlist_str, "#EXTINF:%d,%s\n",
           (gint) ((entry->duration + 500 * GST_MSECOND) / GST_SECOND),
           entry->title ? entry->title : "");
     } else {
       g_string_append_printf (playlist_str, "#EXTINF:%.6f,%s\n",
-          entry->duration / GST_SECOND,
-          entry->title ? entry->title : "");
+          entry->duration / GST_SECOND, entry->title ? entry->title : "");
+
     }
 
     g_string_append_printf (playlist_str, "%s\n", entry->url);
