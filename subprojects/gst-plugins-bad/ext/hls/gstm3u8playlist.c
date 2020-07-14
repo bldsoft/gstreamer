@@ -200,7 +200,7 @@ format_program_date_time (GstM3U8Playlist * playlist, GstM3U8Entry * entry,
     return;
 
 #if GLIB_CHECK_VERSION(2, 62, 0)
-  time_iso8601 = g_date_time_format_iso8601 (entry->program_date_time)
+  time_iso8601 = g_date_time_format_iso8601 (entry->program_date_time);
 #else
   if (g_date_time_to_timeval (entry->program_date_time, &timeval))
     time_iso8601 = g_time_val_to_iso8601 (&timeval);
