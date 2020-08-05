@@ -188,10 +188,8 @@ static void
 format_program_date_time (GstM3U8Playlist * playlist, GstM3U8Entry * entry,
     GString * playlist_str)
 {
-  gchar *time_iso8601 = NULL;
-#if !GLIB_CHECK_VERSION (2, 62, 0)
-  GTimeVal timeval = { };
-#endif
+  gchar *time_str = NULL;
+  gint milliseconds = 0;
 
   if (playlist->program_date_time_mode == GST_HLS_PROGRAM_DATE_TIME_NEVER)
     return;
@@ -199,18 +197,14 @@ format_program_date_time (GstM3U8Playlist * playlist, GstM3U8Entry * entry,
       && entry != playlist->entries->head->data && !entry->discontinuous)
     return;
 
-#if GLIB_CHECK_VERSION(2, 62, 0)
-  time_iso8601 = g_date_time_format_iso8601 (entry->program_date_time);
-#else
-  if (g_date_time_to_timeval (entry->program_date_time, &timeval))
-    time_iso8601 = g_time_val_to_iso8601 (&timeval);
-#endif
+  time_str = g_date_time_format (entry->program_date_time, "%FT%T");
+  milliseconds = g_date_time_get_microsecond (entry->program_date_time) / 1000;
 
-  if (time_iso8601)
-    g_string_append_printf (playlist_str, "#EXT-X-PROGRAM-DATE-TIME:%s\n",
-        time_iso8601);
+  if (time_str)
+    g_string_append_printf (playlist_str, "#EXT-X-PROGRAM-DATE-TIME:%s.%03dZ\n",
+        time_str, milliseconds);
 
-  g_free (time_iso8601);
+  g_free (time_str);
 }
 
 gchar *
