@@ -298,7 +298,7 @@ gst_hls_sink_class_init (GstHlsSinkClass * klass)
   g_object_class_install_property (gobject_class, PROP_PROGRAM_DATE_TIME_MODE,
       g_param_spec_enum ("program-date-time-mode",
           "Mode for #EXT-X-PROGRAM-DATE-TIME tag",
-          "When to show #EXT-X-PROGRAM-DATE-TIME tag",
+          "When to show #EXT-X-PROGRAM-DATE-TIME tag (YYYY-MM-DDThh:mm:ss.SSSZ)",
           GST_HLS_PROGRAM_DATE_TIME_MODE_TYPE, DEFAULT_PROGRAM_DATE_TIME_MODE,
           G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_PROGRAM_DATE_TIME_SHIFT,
@@ -695,7 +695,7 @@ gst_hls_sink_change_state (GstElement * element, GstStateChange trans)
     case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
       if (sink->start_time)
         g_date_time_unref (sink->start_time);
-      sink->start_time = g_date_time_new_now_local ();
+      sink->start_time = g_date_time_new_now_utc ();
       break;
     default:
       break;

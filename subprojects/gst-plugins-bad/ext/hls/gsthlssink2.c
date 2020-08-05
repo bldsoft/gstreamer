@@ -629,7 +629,7 @@ gst_hls_sink2_change_state (GstElement * element, GstStateChange trans)
       if (sink->start_time) {
         g_date_time_unref (sink->start_time);
       }
-      sink->start_time = g_date_time_new_now_local ();
+      sink->start_time = g_date_time_new_now_utc ();
       break;
     default:
       break;
