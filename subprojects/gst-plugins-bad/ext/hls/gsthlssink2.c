@@ -79,6 +79,7 @@ enum
   PROP_SEND_KEYFRAME_REQUESTS,
   PROP_PROGRAM_DATE_TIME_MODE,
   PROP_PROGRAM_DATE_TIME_SHIFT,
+  PROP_SPLITMUXSINK,
   PROP_GSTHLSSINK2_H_PATCH_VERSION,
   PROP_GSTHLSSINK2_C_PATCH_VERSION,
 };
@@ -279,6 +280,9 @@ gst_hls_sink2_class_init (GstHlsSink2Class * klass)
           "PROGRAM-DATE-TIME shift in nanoseconds", G_MININT64, G_MAXINT64,
           DEFAULT_PROGRAM_DATE_TIME_SHIFT,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_SPLITMUXSINK,
+      g_param_spect_object ("splitmuxsink", "splitmuxsink element",
+          "splitmuxsink element", GST_TYPE_ELEMENT, G_PARAM_READABLE));
   g_object_class_install_property (gobject_class,
       PROP_GSTHLSSINK2_H_PATCH_VERSION,
       g_param_spec_uint ("gsthlssink2-h-patch-version",
@@ -745,6 +749,9 @@ gst_hls_sink2_get_property (GObject * object, guint prop_id,
       break;
     case PROP_PROGRAM_DATE_TIME_SHIFT:
       g_value_set_int64 (value, sink->program_date_time_shift);
+      break;
+    case PROP_SPLITMUXSINK:
+      g_value_set_object (value, sink->splitmuxsink);
       break;
     case PROP_GSTHLSSINK2_H_PATCH_VERSION:
       g_value_set_uint (value, RIXJOB_GSTHLSSINK2_H_PATCH_VERSION);
