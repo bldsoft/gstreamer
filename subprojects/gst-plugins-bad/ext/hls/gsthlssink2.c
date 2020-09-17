@@ -281,7 +281,7 @@ gst_hls_sink2_class_init (GstHlsSink2Class * klass)
           DEFAULT_PROGRAM_DATE_TIME_SHIFT,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (gobject_class, PROP_SPLITMUXSINK,
-      g_param_spect_object ("splitmuxsink", "splitmuxsink element",
+      g_param_spec_object ("splitmuxsink", "splitmuxsink element",
           "splitmuxsink element", GST_TYPE_ELEMENT, G_PARAM_READABLE));
   g_object_class_install_property (gobject_class,
       PROP_GSTHLSSINK2_H_PATCH_VERSION,
