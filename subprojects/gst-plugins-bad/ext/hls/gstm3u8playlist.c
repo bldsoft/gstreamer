@@ -151,7 +151,7 @@ gst_m3u8_playlist_add_entry (GstM3U8Playlist * playlist, const gchar * url,
     }
   }
 
-  playlist->sequence_number = index;
+  playlist->sequence_number = index + 1;
   g_queue_push_tail (playlist->entries, entry);
 
   return TRUE;
