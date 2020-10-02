@@ -340,7 +340,7 @@ gst_hls_sink_init (GstHlsSink * sink)
 static void
 gst_hls_sink_reset (GstHlsSink * sink)
 {
-  sink->index = 0;
+  sink->index = -1;
   sink->last_running_time = 0;
   sink->waiting_fku = FALSE;
   gst_event_replace (&sink->force_key_unit_event, NULL);
