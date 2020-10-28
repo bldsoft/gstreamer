@@ -63,6 +63,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_hls_sink_debug);
 #define DEFAULT_KEY_URI "playlist.key"
 #define DEFAULT_PROGRAM_DATE_TIME_MODE GST_HLS_PROGRAM_DATE_TIME_NEVER
 #define DEFAULT_PROGRAM_DATE_TIME_SHIFT 0
+#define DEFAULT_RESET_INDEX_ON_STOP TRUE
 
 #define GST_M3U8_PLAYLIST_VERSION 3
 
@@ -100,10 +101,11 @@ enum
   PROP_GSTHLSSINK_C_PATCH_VERSION,
   PROP_PROGRAM_DATE_TIME_MODE,
   PROP_PROGRAM_DATE_TIME_SHIFT,
+  PROP_RESET_INDEX_ON_STOP,
 };
 
-const int RIXJOB_GSTHLSSINK_H_PATCH_VERSION = 2;
-const int RIXJOB_GSTHLSSINK_C_PATCH_VERSION = 2;
+const int RIXJOB_GSTHLSSINK_H_PATCH_VERSION = 3;
+const int RIXJOB_GSTHLSSINK_C_PATCH_VERSION = 3;
 
 static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
@@ -306,6 +308,10 @@ gst_hls_sink_class_init (GstHlsSinkClass * klass)
           "PROGRAM-DATE-TIME shift in nanoseconds", G_MININT64, G_MAXINT64,
           DEFAULT_PROGRAM_DATE_TIME_SHIFT,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_RESET_INDEX_ON_STOP,
+      g_param_spec_boolean ("reset-index", "Reset index on stop",
+          "Reset index on stop", DEFAULT_RESET_INDEX_ON_STOP,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static void
@@ -330,7 +336,8 @@ gst_hls_sink_init (GstHlsSink * sink)
   sink->encryption_method = DEFAULT_ENCRYPTION_METHOD;
   sink->key_location = g_strdup (DEFAULT_KEY_LOCATION);
   sink->key_uri = g_strdup (DEFAULT_KEY_URI);
-
+  sink->is_reset_index_on_stop = DEFAULT_RESET_INDEX_ON_STOP;
+  sink->index = -1;
   /* haven't added a sink yet, make it is detected as a sink meanwhile */
   GST_OBJECT_FLAG_SET (sink, GST_ELEMENT_FLAG_SINK);
 
@@ -340,16 +347,22 @@ gst_hls_sink_init (GstHlsSink * sink)
 static void
 gst_hls_sink_reset (GstHlsSink * sink)
 {
-  sink->index = -1;
+  if (sink->is_reset_index_on_stop) {
+    sink->index = -1;
+    if (sink->playlist) {
+      gst_m3u8_playlist_free (sink->playlist);
+      sink->playlist = NULL;
+    }
+  }
+  if (!sink->playlist) {
+    sink->playlist =
+        gst_m3u8_playlist_new (GST_M3U8_PLAYLIST_VERSION, sink->playlist_length);
+  }
   sink->last_running_time = 0;
   sink->waiting_fku = FALSE;
   gst_event_replace (&sink->force_key_unit_event, NULL);
   gst_segment_init (&sink->segment, GST_FORMAT_UNDEFINED);
 
-  if (sink->playlist)
-    gst_m3u8_playlist_free (sink->playlist);
-  sink->playlist =
-      gst_m3u8_playlist_new (GST_M3U8_PLAYLIST_VERSION, sink->playlist_length);
   if (sink->start_time) {
     g_date_time_unref (sink->start_time);
     sink->start_time = NULL;
@@ -664,7 +677,13 @@ gst_hls_sink_handle_message (GstBin * bin, GstMessage * message)
       break;
     }
     case GST_MESSAGE_EOS:{
-      sink->playlist->end_list = TRUE;
+      if (sink->is_reset_index_on_stop) {
+        sink->playlist->end_list = TRUE;
+      } else {
+        gst_m3u8_playlist_add_discontinuity (sink->playlist);
+        sink->index++;
+        sink->playlist->sequence_number++;
+      }
       gst_hls_sink_write_playlist (sink);
       sink->state |= GST_M3U8_PLAYLIST_RENDER_ENDED;
       break;
@@ -710,7 +729,13 @@ gst_hls_sink_change_state (GstElement * element, GstStateChange trans)
       /* drain playlist with #EXT-X-ENDLIST */
       if (sink->playlist && (sink->state & GST_M3U8_PLAYLIST_RENDER_STARTED) &&
           !(sink->state & GST_M3U8_PLAYLIST_RENDER_ENDED)) {
-        sink->playlist->end_list = TRUE;
+        if (sink->is_reset_index_on_stop) {
+          sink->playlist->end_list = TRUE;
+        } else {
+          gst_m3u8_playlist_add_discontinuity (sink->playlist);
+          sink->index++;
+          sink->playlist->sequence_number++;
+        }
         gst_hls_sink_write_playlist (sink);
       }
       gst_hls_sink_reset (sink);
@@ -780,6 +805,9 @@ gst_hls_sink_set_property (GObject * object, guint prop_id,
     case PROP_PROGRAM_DATE_TIME_SHIFT:
       sink->program_date_time_shift = g_value_get_int64 (value);
       break;
+    case PROP_RESET_INDEX_ON_STOP:
+      sink->is_reset_index_on_stop = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -837,6 +865,9 @@ gst_hls_sink_get_property (GObject * object, guint prop_id,
       break;
     case PROP_PROGRAM_DATE_TIME_SHIFT:
       g_value_set_int64 (value, sink->program_date_time_shift);
+      break;
+    case PROP_RESET_INDEX_ON_STOP:
+      g_value_set_boolean (value, sink->is_reset_index_on_stop);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
