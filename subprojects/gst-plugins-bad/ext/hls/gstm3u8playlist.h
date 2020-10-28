@@ -51,6 +51,7 @@ struct _GstM3U8Playlist
   gint type;
   gboolean end_list;
   guint sequence_number;
+  guint discontinuity_sequence_number;
   gint program_date_time_mode;
 
   /*< Private >*/
@@ -80,6 +81,8 @@ gboolean          gst_m3u8_playlist_add_entry (GstM3U8Playlist * playlist,
 
 gchar *           gst_m3u8_playlist_render (GstM3U8Playlist * playlist);
 
+
+void gst_m3u8_playlist_add_discontinuity(GstM3U8Playlist * playlist);
 G_END_DECLS
 
 #endif /* __M3U8_H__ */

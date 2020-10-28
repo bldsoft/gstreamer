@@ -57,6 +57,7 @@ struct _GstHlsSink
   GstM3U8PlaylistRenderState state;
   GDateTime* start_time;
   gint64 program_date_time_shift;
+  gboolean is_reset_index_on_stop;
 };
 
 struct _GstHlsSinkClass
