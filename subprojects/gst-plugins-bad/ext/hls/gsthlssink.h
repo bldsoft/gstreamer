@@ -61,6 +61,7 @@ struct _GstHlsSink
   unsigned char key[16];
   GDateTime* start_time;
   gint64 program_date_time_shift;
+  gboolean is_reset_index_on_stop;
 };
 
 struct _GstHlsSinkClass
