@@ -470,6 +470,8 @@ gst_hls_sink2_handle_message (GstBin * bin, GstMessage * message)
     case GST_MESSAGE_ELEMENT:
     {
       const GstStructure *s = gst_message_get_structure (message);
+      GstStructure *struct_copy = NULL;
+      GstMessage *message_copy = NULL;
       if (message->src == GST_OBJECT_CAST (sink->splitmuxsink)) {
         if (gst_structure_has_name (s, "splitmuxsink-fragment-opened")) {
           gst_structure_get_clock_time (s, "running-time",
@@ -510,6 +512,14 @@ gst_hls_sink2_handle_message (GstBin * bin, GstMessage * message)
 
           g_queue_push_tail (&sink->old_locations,
               g_strdup (sink->current_location));
+
+          struct_copy = gst_structure_copy (s);
+          gst_structure_set (struct_copy, "filename", G_TYPE_STRING,
+              g_strdup (sink->current_location), NULL);
+          message_copy = gst_message_new_element (GST_MESSAGE_SRC (message),
+              struct_copy);
+          gst_message_unref (message);
+          message = message_copy;
 
           if (sink->max_files > 0) {
             while (g_queue_get_length (&sink->old_locations) > sink->max_files) {
