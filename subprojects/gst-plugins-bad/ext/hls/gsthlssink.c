@@ -53,6 +53,8 @@ GST_DEBUG_CATEGORY_STATIC (gst_hls_sink_debug);
 #define DEFAULT_PROGRAM_DATE_TIME_MODE GST_HLS_PROGRAM_DATE_TIME_NEVER
 #define DEFAULT_PROGRAM_DATE_TIME_SHIFT 0
 #define DEFAULT_RESET_INDEX_ON_STOP TRUE
+#define DEFAULT_START_MEDIA_SEQUENCE -1
+#define DEFAULT_START_DISCONTINUETY_SEQUENCE 0
 
 #define GST_M3U8_PLAYLIST_VERSION 3
 
@@ -72,6 +74,8 @@ enum
   PROP_PROGRAM_DATE_TIME_MODE,
   PROP_PROGRAM_DATE_TIME_SHIFT,
   PROP_RESET_INDEX_ON_STOP,
+  PROP_START_MEDIA_SEQUENCE,
+  PROP_START_DISCONTINUITY_SEQUENCE
 };
 
 const int RIXJOB_GSTHLSSINK_H_PATCH_VERSION = 2;
@@ -232,6 +236,18 @@ gst_hls_sink_class_init (GstHlsSinkClass * klass)
       g_param_spec_boolean ("reset-index", "Reset index on stop",
           "Reset index on stop", DEFAULT_RESET_INDEX_ON_STOP,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_START_MEDIA_SEQUENCE,
+      g_param_spec_uint ("start-media-sequence", "Start media sequence",
+          "Initial value for EXT-X-MEDIA-SEQUENCE.",
+          0, G_MAXUINT, DEFAULT_START_MEDIA_SEQUENCE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class,
+      PROP_START_DISCONTINUITY_SEQUENCE,
+      g_param_spec_uint ("start-discontinuity-sequence",
+          "Start discontinuity sequence",
+          "Initial value for EXT-X-DISCONTINUITY-SEQUENCE.", 0, G_MAXUINT,
+          DEFAULT_START_DISCONTINUETY_SEQUENCE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static void
@@ -254,7 +270,7 @@ gst_hls_sink_init (GstHlsSink * sink)
   sink->max_files = DEFAULT_MAX_FILES;
   sink->target_duration = DEFAULT_TARGET_DURATION;
   sink->is_reset_index_on_stop = DEFAULT_RESET_INDEX_ON_STOP;
-  sink->index = -1;
+  sink->index = DEFAULT_START_MEDIA_SEQUENCE;
   /* haven't added a sink yet, make it is detected as a sink meanwhile */
   GST_OBJECT_FLAG_SET (sink, GST_ELEMENT_FLAG_SINK);
 
@@ -265,7 +281,7 @@ static void
 gst_hls_sink_reset (GstHlsSink * sink)
 {
   if (sink->is_reset_index_on_stop) {
-    sink->index = -1;
+    sink->index = DEFAULT_START_MEDIA_SEQUENCE;
     if (sink->playlist) {
       gst_m3u8_playlist_free (sink->playlist);
       sink->playlist = NULL;
@@ -521,6 +537,12 @@ gst_hls_sink_set_property (GObject * object, guint prop_id,
     case PROP_RESET_INDEX_ON_STOP:
       sink->is_reset_index_on_stop = g_value_get_boolean (value);
       break;
+    case PROP_START_MEDIA_SEQUENCE:
+      sink->index = g_value_get_uint (value) - 1;
+      break;
+    case PROP_START_DISCONTINUITY_SEQUENCE:
+      sink->playlist->discontinuity_sequence_number = g_value_get_uint (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -572,6 +594,13 @@ gst_hls_sink_get_property (GObject * object, guint prop_id,
       break;
     case PROP_RESET_INDEX_ON_STOP:
       g_value_set_boolean (value, sink->is_reset_index_on_stop);
+      break;
+    case PROP_START_MEDIA_SEQUENCE:
+      g_value_set_uint (value, sink->playlist->sequence_number);
+      break;
+    case PROP_START_DISCONTINUITY_SEQUENCE:
+      g_value_set_uint (value,
+          gst_m3u8_playlist_get_discontinuity_number (sink->playlist));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
