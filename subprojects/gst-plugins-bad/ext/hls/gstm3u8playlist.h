@@ -86,6 +86,7 @@ gchar *           gst_m3u8_playlist_render (GstM3U8Playlist * playlist);
 
 
 void gst_m3u8_playlist_add_discontinuity(GstM3U8Playlist * playlist);
+guint gst_m3u8_playlist_get_discontinuity_number(GstM3U8Playlist * playlist);
 G_END_DECLS
 
 #endif /* __M3U8_H__ */
