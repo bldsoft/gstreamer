@@ -280,3 +280,16 @@ gst_m3u8_playlist_add_discontinuity (GstM3U8Playlist * playlist)
     entry->discontinuous = TRUE;
   }
 }
+
+guint
+gst_m3u8_playlist_get_discontinuity_number (GstM3U8Playlist * playlist)
+{
+  guint result = playlist->discontinuity_sequence_number;
+  for (GList * l = playlist->entries->head; l != NULL; l = l->next) {
+    GstM3U8Entry *entry = l->data;
+    if (entry->discontinuous) {
+      result++;
+    }
+  }
+  return result;
+}
