@@ -85,6 +85,7 @@ G_BEGIN_DECLS
 #define FOURCC__wrt     GST_MAKE_FOURCC(0xa9,'w','r','t')
 #define FOURCC_aART     GST_MAKE_FOURCC('a','A','R','T')
 #define FOURCC_ac_3     GST_MAKE_FOURCC('a','c','-','3')
+#define FOURCC_eac3     GST_MAKE_FOURCC('e','c','-','3')
 #define FOURCC_agsm     GST_MAKE_FOURCC('a','g','s','m')
 #define FOURCC_alac     GST_MAKE_FOURCC('a','l','a','c')
 #define FOURCC_fLaC     GST_MAKE_FOURCC('f','L','a','C')
