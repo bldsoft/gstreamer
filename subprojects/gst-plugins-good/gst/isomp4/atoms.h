@@ -1106,6 +1106,11 @@ AtomInfo *   build_tapt_extension        (gint clef_width, gint clef_height, gin
 AtomInfo *   build_ac3_extension         (guint8 fscod, guint8 bsid,
                                           guint8 bsmod, guint8 acmod,
                                           guint8 lfe_on, guint8 bitrate_code);
+AtomInfo *   build_eac3_extension        (guint8 strmtyp, guint8 substreamid,
+                                          guint16 frmsiz, guint8 fscod,
+                                          guint8 fscod2, guint8 numblkscod,
+                                          guint8 acmod, guint8 lfeon,
+                                          guint8 bsid);
 AtomInfo *   build_opus_extension        (guint32 rate, guint8 channels, guint8 mapping_family,
                                           guint8 stream_count, guint8 coupled_count,
                                           guint8 channel_mapping[256], guint16 pre_skip,
