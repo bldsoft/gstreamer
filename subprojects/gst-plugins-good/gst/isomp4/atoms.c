@@ -5704,6 +5704,42 @@ build_ac3_extension (guint8 fscod, guint8 bsid, guint8 bsmod, guint8 acmod,
 }
 
 AtomInfo *
+build_eac3_extension (guint8 strmtyp, guint8 substreamid, guint16 frmsiz,
+    guint8 fscod, guint8 fscod2, guint8 numblkscod, guint8 acmod, guint8 lfeon,
+    guint8 bsid)
+{
+  AtomData *atom_data = atom_data_new (FOURCC_eac3);
+  guint8 *data;
+
+  atom_data_alloc_mem (atom_data, 4);
+  data = atom_data->data;
+
+  /* Bits from the spec
+   * strmtyp      2
+   * substreamid  3
+   * frmsiz      11
+   * fscod        2
+   * if (fscod == 0x3)
+   *   fscod2     2
+   * else
+   *   numblkscod 2
+   * acmod        3
+   * lfeon        1
+   * bsid         5
+   */
+
+  /* TODO: Need bitwriter */
+  data[0] = (strmtyp << 6) | (substreamid << 3) | ((frmsiz >> 8) & 0x7);
+  data[1] = (frmsiz & 0xff);
+  data[2] = (fscod << 6) | ((fscod == 0x3) ? (fscod2 << 4) : (numblkscod << 4))
+      | (acmod << 1) | lfeon;
+  data[3] = (bsid << 3);
+
+  return build_atom_info_wrapper ((Atom *) atom_data, atom_data_copy_data,
+      atom_data_free);
+}
+
+AtomInfo *
 build_opus_extension (guint32 rate, guint8 channels, guint8 mapping_family,
     guint8 stream_count, guint8 coupled_count, guint8 channel_mapping[256],
     guint16 pre_skip, guint16 output_gain)
