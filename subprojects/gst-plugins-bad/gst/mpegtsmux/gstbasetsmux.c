@@ -88,6 +88,8 @@
 GST_DEBUG_CATEGORY (gst_base_ts_mux_debug);
 #define GST_CAT_DEFAULT gst_base_ts_mux_debug
 
+#define TIMESTAMP_SHIFT_DEFAULT (TSMUX_CLOCK_FREQ * 10 * 360)
+
 /* GstBaseTsMuxPad */
 
 G_DEFINE_TYPE (GstBaseTsMuxPad, gst_base_ts_mux_pad, GST_TYPE_AGGREGATOR_PAD);
@@ -187,7 +189,8 @@ enum
   PROP_BITRATE,
   PROP_PCR_INTERVAL,
   PROP_SCTE_35_PID,
-  PROP_SCTE_35_NULL_INTERVAL
+  PROP_SCTE_35_NULL_INTERVAL,
+  PROP_TIMESTAMP_SHIFT
 };
 
 #define DEFAULT_SCTE_35_PID 0
@@ -2440,6 +2443,10 @@ gst_base_ts_mux_set_property (GObject * object, guint prop_id,
     case PROP_SCTE_35_NULL_INTERVAL:
       mux->scte35_null_interval = g_value_get_uint (value);
       break;
+    case PROP_TIMESTAMP_SHIFT:
+      if (mux->tsmux)
+        mux->timestamp_shift = g_value_get_int64 (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2480,6 +2487,9 @@ gst_base_ts_mux_get_property (GObject * object, guint prop_id,
     case PROP_SCTE_35_NULL_INTERVAL:
       g_value_set_uint (value, mux->scte35_null_interval);
       break;
+    case PROP_TIMESTAMP_SHIFT:
+      g_value_set_int64 (value, mux->tsmux->timestamp_shift);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2498,6 +2508,7 @@ gst_base_ts_mux_default_create_ts_mux (GstBaseTsMux * mux)
   tsmux_set_si_interval (tsmux, mux->si_interval);
   tsmux_set_bitrate (tsmux, mux->bitrate);
   tsmux_set_pcr_interval (tsmux, mux->pcr_interval);
+  tsmux_timestamp_shift (tsmux, mux->timestamp_shift);
 
   return tsmux;
 }
@@ -2632,6 +2643,13 @@ gst_base_ts_mux_class_init (GstBaseTsMuxClass * klass)
           TSMUX_DEFAULT_SCTE_35_NULL_INTERVAL,
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_TIMESTAMP_SHIFT, g_param_spec_int64 ("timestamp-shift",
+          "Timestamp shift",
+          "Set PTS/DTS and PCR shift (in ticks of the 90kHz clock)",
+          G_MININT64, G_MAXINT64, TIMESTAMP_SHIFT_DEFAULT,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
   gst_element_class_add_static_pad_template_with_gtype (gstelement_class,
       &gst_base_ts_mux_src_factory, GST_TYPE_AGGREGATOR_PAD);
 
@@ -2653,6 +2671,7 @@ gst_base_ts_mux_init (GstBaseTsMux * mux)
   mux->bitrate = TSMUX_DEFAULT_BITRATE;
   mux->scte35_pid = DEFAULT_SCTE_35_PID;
   mux->scte35_null_interval = TSMUX_DEFAULT_SCTE_35_NULL_INTERVAL;
+  mux->timestamp_shift = TIMESTAMP_SHIFT_DEFAULT;
 
   mux->packet_size = GST_BASE_TS_MUX_NORMAL_PACKET_LENGTH;
   mux->automatic_alignment = 0;
