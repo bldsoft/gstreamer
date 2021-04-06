@@ -165,6 +165,7 @@ struct GstBaseTsMux {
   guint scte35_null_interval;
   guint32 last_scte35_event_seqnum;
   gboolean enable_custom_mappings;
+  guint64 timestamp_shift;
 
   /* state */
   gboolean first;
