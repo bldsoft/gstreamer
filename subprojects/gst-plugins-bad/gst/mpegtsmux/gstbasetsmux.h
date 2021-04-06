@@ -161,6 +161,7 @@ struct GstBaseTsMux {
   guint scte35_pid;
   guint scte35_null_interval;
   guint32 last_scte35_event_seqnum;
+  guint64 timestamp_shift;
 
   /* state */
   gboolean first;
