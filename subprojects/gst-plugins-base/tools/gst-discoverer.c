@@ -644,6 +644,7 @@ real_main (int argc, char **argv)
   GstDiscoverer *dc;
   gint timeout = 10;
   gboolean use_cache = FALSE, print_cache_dir = FALSE;
+  gint program_number = -1;
   GOptionEntry options[] = {
     {"async", 'a', 0, G_OPTION_ARG_NONE, &async,
         "Run asynchronously", NULL},
@@ -659,6 +660,8 @@ real_main (int argc, char **argv)
         "Output TOC (chapters and editions)", NULL},
     {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose,
         "Verbose properties", NULL},
+    {"program-number", 'p', 0, G_OPTION_ARG_INT, &program_number,
+        "Specify mpegts program number (-1 - use default)", "P"},
     {NULL}
   };
   GOptionContext *ctx;
@@ -702,6 +705,10 @@ real_main (int argc, char **argv)
   }
 
   g_object_set (dc, "use-cache", use_cache, NULL);
+  if (program_number != -1) {
+    g_print ("PROGRAM NUMBER");
+    g_object_set (dc, "mpegts-program-number", program_number, NULL);
+  }
 
   if (!async) {
     gint i;
