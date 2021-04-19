@@ -125,7 +125,6 @@ struct _GstDiscovererPrivate
   /* Global elements */
   GstBin *pipeline;
   GstElement *uridecodebin;
-  GstElement *decodebin;
   GstBus *bus;
 
   GType decodebin_type;
@@ -347,6 +346,7 @@ decodebin_element_added_cb (GstElement * decodebin,
   if (G_OBJECT_TYPE (child) == dc->priv->tsdemux_type) {
     g_object_set (child, "program-number", dc->priv->mpegts_program_number,
         NULL);
+    g_signal_handler_disconnect (decodebin, dc->priv->decodebin_cb_id);
   }
 }
 
@@ -358,7 +358,6 @@ uridecodebin_element_added_cb (GstElement * uridecodebin,
       GST_ELEMENT_NAME (child));
 
   if (G_OBJECT_TYPE (child) == dc->priv->decodebin_type) {
-    dc->priv->decodebin = child;
     g_object_set (child, "post-stream-topology", TRUE, NULL);
     dc->priv->decodebin_cb_id = g_signal_connect_object (child, "element-added",
         G_CALLBACK (decodebin_element_added_cb), dc, 0);
@@ -479,7 +478,6 @@ gst_discoverer_dispose (GObject * obj)
     DISCONNECT_SIGNAL (dc->priv->uridecodebin, dc->priv->no_more_pads_id);
     DISCONNECT_SIGNAL (dc->priv->uridecodebin, dc->priv->source_chg_id);
     DISCONNECT_SIGNAL (dc->priv->bus, dc->priv->bus_cb_id);
-    DISCONNECT_SIGNAL (dc->priv->decodebin, dc->priv->decodebin_cb_id);
 
     /* pipeline was set to NULL in _reset */
     gst_object_unref (dc->priv->pipeline);
@@ -488,7 +486,6 @@ gst_discoverer_dispose (GObject * obj)
 
     dc->priv->pipeline = NULL;
     dc->priv->uridecodebin = NULL;
-    dc->priv->decodebin = NULL;
     dc->priv->bus = NULL;
   }
 
