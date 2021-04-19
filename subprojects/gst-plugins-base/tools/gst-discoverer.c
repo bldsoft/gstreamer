@@ -702,7 +702,6 @@ main (int argc, char **argv)
 
   g_object_set (dc, "use-cache", use_cache, NULL);
   if (program_number != -1) {
-    g_print ("PROGRAM NUMBER");
     g_object_set (dc, "mpegts-program-number", program_number, NULL);
   }
 
