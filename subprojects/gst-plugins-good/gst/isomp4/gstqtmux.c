@@ -6624,6 +6624,8 @@ gst_qt_mux_video_sink_set_caps (GstQTMuxPad * qtpad, GstCaps * caps)
     /* Fill version and 3 bytes of flags to 0 */
     gst_buffer_memset (av1_codec_data, 0, 0, 4);
     gst_buffer_fill (av1_codec_data, 4, &presentation_delay_byte, 1);
+    guint8 version = 0x81;
+    gst_buffer_fill (av1_codec_data, 0, &version, 1);
     if (codec_data)
       av1_codec_data = gst_buffer_append (av1_codec_data,
           gst_buffer_ref ((GstBuffer *) codec_data));
