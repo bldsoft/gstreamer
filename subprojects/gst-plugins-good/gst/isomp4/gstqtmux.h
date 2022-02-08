@@ -350,6 +350,8 @@ struct _GstQTMux
 
   gboolean force_create_timecode_trak;
 
+  gboolean solidify_fragment_duration;
+
   /* for request pad naming */
   guint video_pads, audio_pads, subtitle_pads, caption_pads;
 };

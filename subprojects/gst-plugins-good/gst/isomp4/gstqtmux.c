@@ -332,6 +332,7 @@ enum
   PROP_START_GAP_THRESHOLD,
   PROP_FORCE_CREATE_TIMECODE_TRAK,
   PROP_FRAGMENT_MODE,
+  PROP_SOLIDIFY_FRAGMENT_DURATION,
 };
 
 /* some spare for header size as well */
@@ -358,6 +359,7 @@ enum
 #define DEFAULT_MAX_RAW_AUDIO_DRIFT 40 * GST_MSECOND
 #define DEFAULT_START_GAP_THRESHOLD 0
 #define DEFAULT_FORCE_CREATE_TIMECODE_TRAK FALSE
+#define DEFAULT_SOLIDIFY_FRAGMENT_DURATION FALSE
 #define DEFAULT_FRAGMENT_MODE GST_QT_MUX_FRAGMENT_DASH_OR_MSS
 
 static void gst_qt_mux_finalize (GObject * object);
@@ -596,6 +598,13 @@ gst_qt_mux_class_init (GstQTMuxClass * klass)
           "Force Create Timecode Trak",
           "Create a timecode trak even in unsupported flavors",
           DEFAULT_FORCE_CREATE_TIMECODE_TRAK,
+          G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class,
+      PROP_SOLIDIFY_FRAGMENT_DURATION,
+      g_param_spec_boolean ("solidify-fragment-duration",
+          "Solidify Fragment Duration",
+          "Solidify a fragment duration with omitting sync flag",
+          DEFAULT_SOLIDIFY_FRAGMENT_DURATION,
           G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS));
 
   /**
@@ -852,6 +861,7 @@ gst_qt_mux_init (GstQTMux * qtmux, GstQTMuxClass * qtmux_klass)
   qtmux->max_raw_audio_drift = DEFAULT_MAX_RAW_AUDIO_DRIFT;
   qtmux->start_gap_threshold = DEFAULT_START_GAP_THRESHOLD;
   qtmux->force_create_timecode_trak = DEFAULT_FORCE_CREATE_TIMECODE_TRAK;
+  qtmux->solidify_fragment_duration = DEFAULT_SOLIDIFY_FRAGMENT_DURATION;
 
   /* always need this */
   qtmux->context =
@@ -4310,6 +4320,7 @@ gst_qt_mux_pad_fragment_add_buffer (GstQTMux * qtmux, GstQTMuxPad * pad,
 {
   GstFlowReturn ret = GST_FLOW_OK;
   guint index = 0;
+  gboolean is_flush = FALSE;
 
   GST_LOG_OBJECT (pad, "%p %u %" G_GUINT64_FORMAT " %" G_GUINT64_FORMAT,
       pad->traf, force, qtmux->current_chunk_offset, chunk_offset);
@@ -4319,10 +4330,16 @@ gst_qt_mux_pad_fragment_add_buffer (GstQTMux * qtmux, GstQTMuxPad * pad,
     goto init;
 
 flush:
+  if (qtmux->solidify_fragment_duration)
+    is_flush = force || ((sync && pad->sync)
+        && pad->fragment_duration < (gint64) delta);
+  else
+    is_flush = force || (sync && pad->sync)
+        || pad->fragment_duration < (gint64) delta;
+
   /* flush pad fragment if threshold reached,
    * or at new keyframe if we should be minding those in the first place */
-  if (G_UNLIKELY (force || (sync && pad->sync) ||
-          pad->fragment_duration < (gint64) delta)) {
+  if (G_UNLIKELY (is_flush)) {
 
     if (qtmux->fragment_mode == GST_QT_MUX_FRAGMENT_FIRST_MOOV_THEN_FINALISE) {
       if (qtmux->fragment_sequence == 0) {
@@ -7272,6 +7289,9 @@ gst_qt_mux_get_property (GObject * object,
     case PROP_FORCE_CREATE_TIMECODE_TRAK:
       g_value_set_boolean (value, qtmux->force_create_timecode_trak);
       break;
+    case PROP_SOLIDIFY_FRAGMENT_DURATION:
+      g_value_set_boolean (value, qtmux->solidify_fragment_duration);
+      break;
     case PROP_FRAGMENT_MODE:{
       GstQTMuxFragmentMode mode = qtmux->fragment_mode;
       if (mode == GST_QT_MUX_FRAGMENT_STREAMABLE)
@@ -7372,6 +7392,9 @@ gst_qt_mux_set_property (GObject * object,
       qtmux->force_create_timecode_trak = g_value_get_boolean (value);
       qtmux->context->force_create_timecode_trak =
           qtmux->force_create_timecode_trak;
+      break;
+    case PROP_SOLIDIFY_FRAGMENT_DURATION:
+      qtmux->solidify_fragment_duration = g_value_get_boolean (value);
       break;
     case PROP_FRAGMENT_MODE:{
       GstQTMuxFragmentMode mode = g_value_get_enum (value);
