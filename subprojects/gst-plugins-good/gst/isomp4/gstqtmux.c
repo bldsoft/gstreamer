@@ -362,6 +362,8 @@ enum
 #define DEFAULT_SOLIDIFY_FRAGMENT_DURATION FALSE
 #define DEFAULT_FRAGMENT_MODE GST_QT_MUX_FRAGMENT_DASH_OR_MSS
 
+#define FRAGMENT_DURATION_SHIFT 500
+
 static void gst_qt_mux_finalize (GObject * object);
 
 /* property functions */
@@ -4321,6 +4323,7 @@ gst_qt_mux_pad_fragment_add_buffer (GstQTMux * qtmux, GstQTMuxPad * pad,
   GstFlowReturn ret = GST_FLOW_OK;
   guint index = 0;
   gboolean is_flush = FALSE;
+  guint64 flush_shift = 0;
 
   GST_LOG_OBJECT (pad, "%p %u %" G_GUINT64_FORMAT " %" G_GUINT64_FORMAT,
       pad->traf, force, qtmux->current_chunk_offset, chunk_offset);
@@ -4330,10 +4333,13 @@ gst_qt_mux_pad_fragment_add_buffer (GstQTMux * qtmux, GstQTMuxPad * pad,
     goto init;
 
 flush:
-  if (qtmux->solidify_fragment_duration)
+  if (qtmux->solidify_fragment_duration && pad->trak->is_video) {
+    flush_shift = gst_util_uint64_scale (FRAGMENT_DURATION_SHIFT,
+        atom_trak_get_timescale (pad->trak), 1000);
+
     is_flush = force || ((sync && pad->sync)
-        && pad->fragment_duration < (gint64) delta);
-  else
+        && pad->fragment_duration < (gint64) delta + flush_shift);
+  } else
     is_flush = force || (sync && pad->sync)
         || pad->fragment_duration < (gint64) delta;
 
