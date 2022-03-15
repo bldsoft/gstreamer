@@ -138,6 +138,10 @@
   "audio/x-ac3, " \
   COMMON_AUDIO_CAPS (6, MAX)
 
+#define EAC3_CAPS \
+  "audio/x-eac3, " \
+  COMMON_AUDIO_CAPS (6, MAX)
+
 #define AMR_CAPS \
   "audio/AMR, " \
   "rate = (int) 8000, " \
@@ -231,7 +235,8 @@ GstQTMuxFormatProp gst_qt_mux_format_list[] = {
             "video/x-mp4-part," COMMON_VIDEO_CAPS "; "
             "video/x-av1, " COMMON_VIDEO_CAPS),
         GST_STATIC_CAPS (MP123_CAPS "; "
-            AAC_CAPS " ; " AC3_CAPS " ; " ALAC_CAPS " ; " OPUS_CAPS),
+            AAC_CAPS " ; " AC3_CAPS " ; " EAC3_CAPS " ; " ALAC_CAPS " ; "
+            OPUS_CAPS),
         GST_STATIC_CAPS (TEXT_UTF8),
       GST_STATIC_CAPS_NONE}
   ,

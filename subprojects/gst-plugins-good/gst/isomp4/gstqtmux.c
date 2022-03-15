@@ -64,6 +64,7 @@
 #include <gst/gst.h>
 #include <gst/base/gstbytereader.h>
 #include <gst/base/gstbitreader.h>
+#include <gst/base/gstbytewriter.h>
 #include <gst/audio/audio.h>
 #include <gst/video/video.h>
 #include <gst/tag/tag.h>
@@ -1173,6 +1174,85 @@ gst_qt_mux_prepare_parse_ac3_frame (GstQTMuxPad * qtpad, GstBuffer * buf,
 
     gst_qt_mux_pad_add_ac3_extension (qtmux, qtpad, fscod, frmsizcod, bsid,
         bsmod, acmod, lfe_on);
+
+    /* AC-3 spec says that those values should be constant for the
+     * whole stream when muxed in mp4. We trust the input follows it */
+    GST_DEBUG_OBJECT (qtpad, "Data parsed, removing "
+        "prepare buffer function");
+    qtpad->prepare_buf_func = NULL;
+  }
+
+done:
+  gst_buffer_unmap (buf, &map);
+  return buf;
+}
+
+static void
+gst_qt_mux_pad_add_eac3_extension (GstQTMux * qtmux, GstQTMuxPad * qtpad,
+    guint8 strmtyp, guint8 substreamid, guint16 frmsiz, guint8 fscod,
+    guint8 fscod2, guint8 numblkscod, guint8 acmod, guint8 lfeon, guint8 bsid)
+{
+  AtomInfo *ext;
+
+  g_return_if_fail (qtpad->trak_ste);
+
+  ext = build_eac3_extension (strmtyp, substreamid, frmsiz, fscod, fscod2,
+      numblkscod, acmod, lfeon, bsid);
+
+  sample_table_entry_add_ext_atom (qtpad->trak_ste, ext);
+}
+
+static GstBuffer *
+gst_qt_mux_prepare_parse_eac3_frame (GstQTMuxPad * qtpad, GstBuffer * buf,
+    GstQTMux * qtmux)
+{
+  GstMapInfo map;
+  GstByteReader reader;
+  GstBitReader bits;
+  guint offset;
+
+  if (!gst_buffer_map (buf, &map, GST_MAP_READ)) {
+    GST_WARNING_OBJECT (qtpad, "Failed to map buffer");
+    return buf;
+  }
+
+  if (G_UNLIKELY (map.size < 8)) {
+    goto done;
+  }
+
+  gst_byte_reader_init (&reader, map.data, map.size);
+  offset = gst_byte_reader_masked_scan_uint32 (&reader, 0xffff0000, 0x0b770000,
+      0, map.size);
+
+  if (offset != -1) {
+    guint16 frmsiz;
+    guint8 strmtyp, substreamid, fscod, acmod, lfeon, bsid;
+    guint8 fscod2 = 0, numblkscod = 0;
+
+    GST_DEBUG_OBJECT (qtpad, "Found eac3 sync point at offset: %u", offset);
+
+    gst_bit_reader_init (&bits, map.data, map.size);
+
+    /* offset + sync */
+    gst_bit_reader_skip_unchecked (&bits, offset * 8 + 16);
+
+    strmtyp = gst_bit_reader_get_bits_uint8_unchecked (&bits, 2);
+    substreamid = gst_bit_reader_get_bits_uint8_unchecked (&bits, 3);
+    frmsiz = gst_bit_reader_get_bits_uint16_unchecked (&bits, 11);
+    fscod = gst_bit_reader_get_bits_uint8_unchecked (&bits, 2);
+
+    if (fscod == 0x3) {
+      fscod2 = gst_bit_reader_get_bits_uint8_unchecked (&bits, 2);
+    } else {
+      numblkscod = gst_bit_reader_get_bits_uint8_unchecked (&bits, 2);
+    }
+
+    acmod = gst_bit_reader_get_bits_uint8_unchecked (&bits, 3);
+    lfeon = gst_bit_reader_get_bits_uint8_unchecked (&bits, 1);
+    bsid = gst_bit_reader_get_bits_uint8_unchecked (&bits, 5);
+
+    gst_qt_mux_pad_add_eac3_extension (qtmux, qtpad, strmtyp, substreamid,
+        frmsiz, fscod, fscod2, numblkscod, acmod, lfeon, bsid);
 
     /* AC-3 spec says that those values should be constant for the
      * whole stream when muxed in mp4. We trust the input follows it */
@@ -6080,6 +6160,15 @@ gst_qt_mux_audio_sink_set_caps (GstQTMuxPad * qtpad, GstCaps * caps)
      * the stream itself. Abuse the prepare_buf_func so we parse a frame
      * and get the needed data */
     qtpad->prepare_buf_func = gst_qt_mux_prepare_parse_ac3_frame;
+  } else if (strcmp (mimetype, "audio/x-eac3") == 0) {
+    entry.fourcc = FOURCC_eac3;
+
+    /* Fixed values according to TS 102 366 but it also mentions that
+     * they should be ignored */
+    entry.channels = 2;
+    entry.sample_size = 16;
+
+    qtpad->prepare_buf_func = gst_qt_mux_prepare_parse_eac3_frame;
   } else if (strcmp (mimetype, "audio/x-opus") == 0) {
     /* Based on the specification defined in:
      * https://www.opus-codec.org/docs/opus_in_isobmff.html */
@@ -6538,6 +6627,8 @@ gst_qt_mux_video_sink_set_caps (GstQTMuxPad * qtpad, GstCaps * caps)
     /* Fill version and 3 bytes of flags to 0 */
     gst_buffer_memset (av1_codec_data, 0, 0, 4);
     gst_buffer_fill (av1_codec_data, 4, &presentation_delay_byte, 1);
+    guint8 version = 0x81;
+    gst_buffer_fill (av1_codec_data, 0, &version, 1);
     if (codec_data)
       av1_codec_data = gst_buffer_append (av1_codec_data,
           gst_buffer_ref ((GstBuffer *) codec_data));

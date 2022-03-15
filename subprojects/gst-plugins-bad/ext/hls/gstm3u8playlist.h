@@ -23,8 +23,25 @@
 #define __GST_M3U8_PLAYLIST_H__
 
 #include <glib.h>
+#include <glib-object.h>
+
 
 G_BEGIN_DECLS
+
+extern const int RIXJOB_GSTM3U8PLAYLIST_H_PATCH_VERSION;
+extern const int RIXJOB_GSTM3U8PLAYLIST_C_PATCH_VERSION;
+
+enum
+{
+  GST_HLS_PROGRAM_DATE_TIME_NEVER,
+  GST_HLS_PROGRAM_DATE_TIME_FIRST_CHUNK,
+  GST_HLS_PROGRAM_DATE_TIME_ALL_CHUNKS
+};
+
+GType gst_hls_program_date_time_mode_get_type(void);
+
+#define GST_HLS_PROGRAM_DATE_TIME_MODE_TYPE     \
+    (gst_hls_program_date_time_mode_get_type ())
 
 typedef struct _GstM3U8Playlist GstM3U8Playlist;
 
@@ -35,6 +52,10 @@ struct _GstM3U8Playlist
   gint type;
   gboolean end_list;
   guint sequence_number;
+  guint discontinuity_sequence_number;
+  const gchar *key_location;
+  gint encryption_method;
+  gint program_date_time_mode;
 
   /*< Private >*/
   GQueue *entries;
@@ -58,10 +79,14 @@ gboolean          gst_m3u8_playlist_add_entry (GstM3U8Playlist * playlist,
                                                const gchar     * title,
                                                gfloat            duration,
                                                guint             index,
-                                               gboolean          discontinuous);
+                                               gboolean          discontinuous,
+                                               GDateTime       * program_date_time);
 
 gchar *           gst_m3u8_playlist_render (GstM3U8Playlist * playlist);
 
+
+void gst_m3u8_playlist_add_discontinuity(GstM3U8Playlist * playlist);
+guint gst_m3u8_playlist_get_discontinuity_number(GstM3U8Playlist * playlist);
 G_END_DECLS
 
 #endif /* __M3U8_H__ */

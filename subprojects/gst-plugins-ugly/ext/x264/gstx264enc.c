@@ -384,6 +384,7 @@ enum
   ARG_AU_NALU,
   ARG_TRELLIS,
   ARG_KEYINT_MAX,
+  ARG_KEYINT_MIN,
   ARG_CABAC,
   ARG_QP_MIN,
   ARG_QP_MAX,
@@ -422,6 +423,7 @@ enum
 #define ARG_AU_NALU_DEFAULT            TRUE
 #define ARG_TRELLIS_DEFAULT            TRUE
 #define ARG_KEYINT_MAX_DEFAULT         0
+#define ARG_KEYINT_MIN_DEFAULT         0
 #define ARG_CABAC_DEFAULT              TRUE
 #define ARG_QP_MIN_DEFAULT             10
 #define ARG_QP_MAX_DEFAULT             51
@@ -1134,6 +1136,13 @@ gst_x264_enc_class_init (GstX264EncClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   g_string_append_printf (x264enc_defaults, ":keyint=%d",
       ARG_KEYINT_MAX_DEFAULT);
+  g_object_class_install_property (gobject_class, ARG_KEYINT_MIN,
+      g_param_spec_uint ("key-int-min", "Key-frame minimal interval",
+          "Manimal distance between two key-frames (0 for automatic)",
+          0, G_MAXINT, ARG_KEYINT_MIN_DEFAULT,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_string_append_printf (x264enc_defaults, ":keyint_min=%d",
+      ARG_KEYINT_MIN_DEFAULT);
   g_object_class_install_property (gobject_class, ARG_CABAC,
       g_param_spec_boolean ("cabac", "Use CABAC", "Enable CABAC entropy coding",
           ARG_CABAC_DEFAULT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
@@ -1307,6 +1316,7 @@ gst_x264_enc_init (GstX264Enc * encoder)
   encoder->au_nalu = ARG_AU_NALU_DEFAULT;
   encoder->trellis = ARG_TRELLIS_DEFAULT;
   encoder->keyint_max = ARG_KEYINT_MAX_DEFAULT;
+  encoder->keyint_min = ARG_KEYINT_MIN_DEFAULT;
   encoder->cabac = ARG_CABAC_DEFAULT;
   encoder->qp_min = ARG_QP_MIN_DEFAULT;
   encoder->qp_max = ARG_QP_MAX_DEFAULT;
@@ -1673,6 +1683,10 @@ gst_x264_enc_init_encoder (GstX264Enc * encoder)
   if (info->par_d > 0) {
     encoder->x264param.vui.i_sar_width = info->par_n;
     encoder->x264param.vui.i_sar_height = info->par_d;
+  }
+
+  if (encoder->keyint_min) {
+    encoder->x264param.i_keyint_min = encoder->keyint_min;
   }
 
   if ((((info->height == 576) && ((info->width == 720)
@@ -2801,6 +2815,11 @@ gst_x264_enc_set_property (GObject * object, guint prop_id,
       g_string_append_printf (encoder->option_string, ":keyint=%d",
           encoder->keyint_max);
       break;
+    case ARG_KEYINT_MIN:
+      encoder->keyint_min = g_value_get_uint (value);
+      g_string_append_printf (encoder->option_string, ":keyint_min=%d",
+          encoder->keyint_min);
+      break;
     case ARG_CABAC:
       encoder->cabac = g_value_get_boolean (value);
       g_string_append_printf (encoder->option_string, ":cabac=%d",
@@ -2950,6 +2969,9 @@ gst_x264_enc_get_property (GObject * object, guint prop_id,
       break;
     case ARG_KEYINT_MAX:
       g_value_set_uint (value, encoder->keyint_max);
+      break;
+    case ARG_KEYINT_MIN:
+      g_value_set_uint (value, encoder->keyint_min);
       break;
     case ARG_QP_MIN:
       g_value_set_uint (value, encoder->qp_min);
