@@ -58,6 +58,8 @@ struct _GstHlsSink2
   GstClockTime current_running_time_start;
   GQueue old_locations;
   GstM3U8PlaylistRenderState state;
+  GDateTime *start_time;
+  gint64 program_date_time_shift;
 };
 
 struct _GstHlsSink2Class

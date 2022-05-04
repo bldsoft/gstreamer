@@ -96,7 +96,7 @@
 
 /* Base for all written PCR and DTS/PTS,
  * so we have some slack to go backwards */
-#define CLOCK_BASE (TSMUX_CLOCK_FREQ * 10 * 360)
+//#define CLOCK_BASE (TSMUX_CLOCK_FREQ * 10 * 360)
 
 static gboolean tsmux_write_pat (TsMux * mux);
 static gboolean tsmux_write_pmt (TsMux * mux, TsMuxProgram * program);
@@ -1596,7 +1596,8 @@ tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
   g_return_val_if_fail (stream != NULL, FALSE);
 
   if (tsmux_stream_is_pcr (stream)) {
-    gint64 cur_ts = CLOCK_BASE;
+    gint64 cur_ts = mux->timestamp_shift;
+
     if (tsmux_stream_get_dts (stream) != G_MININT64)
       cur_ts += tsmux_stream_get_dts (stream);
     else
@@ -1617,9 +1618,13 @@ tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
   if (pi->packet_start_unit_indicator) {
     tsmux_stream_initialize_pes_packet (stream);
     if (stream->dts != G_MININT64)
-      stream->dts += CLOCK_BASE;
-    if (stream->pts != G_MININT64)
-      stream->pts += CLOCK_BASE;
+      stream->dts += mux->timestamp_shift;
+    if (stream->pts != G_MININT64) {
+      stream->pts += mux->timestamp_shift;
+      if (stream->pts < stream->dts || stream->dts < 0) {
+        stream->dts = stream->pts;
+      }
+    }
   }
   pi->stream_avail = tsmux_stream_bytes_avail (stream);
 
@@ -1858,4 +1863,10 @@ void
 tsmux_set_bitrate (TsMux * mux, guint64 bitrate)
 {
   mux->bitrate = bitrate;
+}
+
+void
+tsmux_timestamp_shift (TsMux * mux, gint64 shift)
+{
+  mux->timestamp_shift = shift;
 }
