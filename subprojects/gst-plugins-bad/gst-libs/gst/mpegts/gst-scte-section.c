@@ -403,7 +403,7 @@ _parse_sit (GstMpegtsSection * section)
   if (data != end - 4) {
     GST_WARNING ("PID %d invalid SIT parsed %d length %d",
         section->pid, (gint) (data - section->data), section->section_length);
-    goto error;
+    // goto error;
   }
 
   sit->fully_parsed = TRUE;
