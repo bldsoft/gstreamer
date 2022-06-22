@@ -95,6 +95,7 @@ struct _GstX264Enc
   gboolean trellis;
   guint vbv_buf_capacity;
   guint keyint_max;
+  guint keyint_min;
   gboolean cabac;
   gfloat ip_factor;
   gfloat pb_factor;

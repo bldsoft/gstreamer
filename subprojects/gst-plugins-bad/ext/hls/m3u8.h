@@ -240,6 +240,12 @@ GstHLSVariantStream *  gst_hls_master_playlist_get_matching_variant (GstHLSMaste
 
 void                   gst_hls_master_playlist_unref (GstHLSMasterPlaylist * playlist);
 
+gint                   gst_m3u8_compare_uri_without_tokens (const gchar * lhs,
+                                                            const gchar * rhs);
+
+extern const int RIXJOB_M3U8_H_PATCH_VERSION;
+extern const int RIXJOB_M3U8_C_PATCH_VERSION;
+
 G_END_DECLS
 
 #endif /* __M3U8_H__ */
