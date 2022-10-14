@@ -55,6 +55,13 @@ struct _GstHlsSink
   gboolean waiting_fku;
   GstClockTime last_running_time;
   GstM3U8PlaylistRenderState state;
+  gint encryption_method;
+  gchar *key_location;
+  gchar *key_uri;
+  unsigned char key[16];
+  GDateTime* start_time;
+  gint64 program_date_time_shift;
+  gboolean is_reset_index_on_stop;
 };
 
 struct _GstHlsSinkClass

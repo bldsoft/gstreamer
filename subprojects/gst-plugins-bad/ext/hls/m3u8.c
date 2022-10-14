@@ -31,6 +31,9 @@
 
 #define GST_CAT_DEFAULT hls_debug
 
+const int RIXJOB_M3U8_H_PATCH_VERSION = 1;
+const int RIXJOB_M3U8_C_PATCH_VERSION = 1;
+
 static GstM3U8MediaFile *gst_m3u8_media_file_new (gchar * uri,
     gchar * title, GstClockTime duration, guint sequence);
 static void gst_m3u8_init_file_unref (GstM3U8InitFile * self);
@@ -1454,13 +1457,24 @@ gst_hls_variant_stream_unref (GstHLSVariantStream * stream)
   }
 }
 
+gint
+gst_m3u8_compare_uri_without_tokens (const gchar * lhs, const gchar * rhs)
+{
+  const gchar *lhs_end = strchr (lhs, '?');
+  const gchar *rhs_end = strchr (rhs, '?');
+  gsize len = (lhs_end && rhs_end) ? MIN (lhs_end - lhs, rhs_end - rhs) : -1;
+  return strncmp (lhs, rhs, len);
+}
+
 static GstHLSVariantStream *
 find_variant_stream_by_name (GList * list, const gchar * name)
 {
   for (; list != NULL; list = list->next) {
     GstHLSVariantStream *variant_stream = list->data;
 
-    if (variant_stream->name != NULL && !strcmp (variant_stream->name, name))
+    if (variant_stream->name != NULL
+        && gst_m3u8_compare_uri_without_tokens (variant_stream->name,
+            name) == 0)
       return variant_stream;
   }
   return NULL;
@@ -1472,7 +1486,8 @@ find_variant_stream_by_uri (GList * list, const gchar * uri)
   for (; list != NULL; list = list->next) {
     GstHLSVariantStream *variant_stream = list->data;
 
-    if (variant_stream->uri != NULL && !strcmp (variant_stream->uri, uri))
+    if (variant_stream->uri != NULL
+        && gst_m3u8_compare_uri_without_tokens (variant_stream->uri, uri) == 0)
       return variant_stream;
   }
   return NULL;
@@ -1593,6 +1608,11 @@ gst_hls_master_playlist_new_from_data (gchar * data, const gchar * base_uri)
         playlist->variants = g_list_append (playlist->variants, pending_stream);
         /* use first stream in the playlist as default */
         if (playlist->default_variant == NULL) {
+          playlist->default_variant =
+              gst_hls_variant_stream_ref (pending_stream);
+        } else if (playlist->default_variant->bandwidth <
+            pending_stream->bandwidth) {
+          gst_hls_variant_stream_unref (playlist->default_variant);
           playlist->default_variant =
               gst_hls_variant_stream_ref (pending_stream);
         }
