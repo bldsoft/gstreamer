@@ -557,6 +557,7 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
 #define UDP_DEFAULT_PORT                5004
 #define UDP_DEFAULT_MULTICAST_GROUP     "0.0.0.0"
 #define UDP_DEFAULT_MULTICAST_IFACE     NULL
+#define UDP_DEFAULT_MULTICAST_SOURCE    NULL
 #define UDP_DEFAULT_URI                 "udp://"UDP_DEFAULT_MULTICAST_GROUP":"G_STRINGIFY(UDP_DEFAULT_PORT)
 #define UDP_DEFAULT_CAPS                NULL
 #define UDP_DEFAULT_SOCKET              NULL
@@ -578,6 +579,7 @@ enum
   PROP_PORT,
   PROP_MULTICAST_GROUP,
   PROP_MULTICAST_IFACE,
+  PROP_MULTICAST_SOURCE,
   PROP_URI,
   PROP_CAPS,
   PROP_SOCKET,
@@ -669,10 +671,22 @@ gst_udpsrc_class_init (GstUDPSrcClass * klass)
           "This allows multiple interfaces separated by comma. (\"eth0,eth1\")",
           UDP_DEFAULT_MULTICAST_IFACE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  /**
+   * GstUDPSrc:multicast-source:
+   *
+   * The source to receive the stream from. (IGMPv3 SSM RFC 4604)
+   *
+   * Since: 1.22
+   */
+  g_object_class_install_property (gobject_class, PROP_MULTICAST_SOURCE,
+      g_param_spec_string ("multicast-source", "Source Specific Multicast",
+          "The source to receive the stream from. (IGMPv3 SSM RFC 4604)",
+          UDP_DEFAULT_MULTICAST_SOURCE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (gobject_class, PROP_URI,
       g_param_spec_string ("uri", "URI",
-          "URI in the form of udp://multicast_group:port", UDP_DEFAULT_URI,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+          "URI in the form of udp://multicast_group:port or udp://multicast_source@multicast_group:port",
+          UDP_DEFAULT_URI, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (gobject_class, PROP_CAPS,
       g_param_spec_boxed ("caps", "Caps",
           "The caps of the source pad", GST_TYPE_CAPS,
@@ -807,6 +821,7 @@ gst_udpsrc_init (GstUDPSrc * udpsrc)
       UDP_DEFAULT_PORT);
 
   udpsrc->address = g_strdup (UDP_DEFAULT_MULTICAST_GROUP);
+  udpsrc->source = g_strdup (UDP_DEFAULT_MULTICAST_SOURCE);
   udpsrc->port = UDP_DEFAULT_PORT;
   udpsrc->socket = UDP_DEFAULT_SOCKET;
   udpsrc->multi_iface = g_strdup (UDP_DEFAULT_MULTICAST_IFACE);
@@ -1239,8 +1254,9 @@ gst_udpsrc_set_uri (GstUDPSrc * src, const gchar * uri, GError ** error)
 {
   gchar *address;
   guint16 port;
+  gchar *source;
 
-  if (!gst_udp_parse_uri (uri, &address, &port))
+  if (!gst_udp_parse_uri (uri, &address, &port, &source))
     goto wrong_uri;
 
   if (port == (guint16) - 1)
@@ -1249,6 +1265,8 @@ gst_udpsrc_set_uri (GstUDPSrc * src, const gchar * uri, GError ** error)
   g_free (src->address);
   src->address = address;
   src->port = port;
+  g_free (src->source);
+  src->source = source;
 
   g_free (src->uri);
   src->uri = g_strdup (uri);
@@ -1279,8 +1297,14 @@ gst_udpsrc_set_property (GObject * object, guint prop_id, const GValue * value,
     case PROP_PORT:
       udpsrc->port = g_value_get_int (value);
       g_free (udpsrc->uri);
-      udpsrc->uri =
-          g_strdup_printf ("udp://%s:%u", udpsrc->address, udpsrc->port);
+      if (udpsrc->source) {
+        udpsrc->uri =
+            g_strdup_printf ("udp://%s@%s:%u",
+            udpsrc->source, udpsrc->address, udpsrc->port);
+      } else {
+        udpsrc->uri =
+            g_strdup_printf ("udp://%s:%u", udpsrc->address, udpsrc->port);
+      }
       break;
     case PROP_MULTICAST_GROUP:
     case PROP_ADDRESS:
@@ -1294,8 +1318,14 @@ gst_udpsrc_set_property (GObject * object, guint prop_id, const GValue * value,
         udpsrc->address = g_strdup (UDP_DEFAULT_MULTICAST_GROUP);
 
       g_free (udpsrc->uri);
-      udpsrc->uri =
-          g_strdup_printf ("udp://%s:%u", udpsrc->address, udpsrc->port);
+      if (udpsrc->source) {
+        udpsrc->uri =
+            g_strdup_printf ("udp://%s@%s:%u",
+            udpsrc->source, udpsrc->address, udpsrc->port);
+      } else {
+        udpsrc->uri =
+            g_strdup_printf ("udp://%s:%u", udpsrc->address, udpsrc->port);
+      }
       break;
     }
     case PROP_MULTICAST_IFACE:
@@ -1306,6 +1336,12 @@ gst_udpsrc_set_property (GObject * object, guint prop_id, const GValue * value,
       else
         udpsrc->multi_iface = g_value_dup_string (value);
       break;
+    case PROP_MULTICAST_SOURCE:
+    {
+      g_free (udpsrc->source);
+      udpsrc->source = g_value_dup_string (value);
+      break;
+    }
     case PROP_URI:
       gst_udpsrc_set_uri (udpsrc, g_value_get_string (value), NULL);
       break;
@@ -1398,6 +1434,9 @@ gst_udpsrc_get_property (GObject * object, guint prop_id, GValue * value,
       break;
     case PROP_MULTICAST_IFACE:
       g_value_set_string (value, udpsrc->multi_iface);
+      break;
+    case PROP_MULTICAST_SOURCE:
+      g_value_set_string (value, udpsrc->source);
       break;
     case PROP_URI:
       g_value_set_string (value, udpsrc->uri);
@@ -1515,6 +1554,7 @@ static gboolean
 gst_udpsrc_open (GstUDPSrc * src)
 {
   GInetAddress *addr, *bind_addr;
+  GInetAddress *src_addr = NULL;
   GSocketAddress *bind_saddr;
   GError *err = NULL;
 
@@ -1529,6 +1569,13 @@ gst_udpsrc_open (GstUDPSrc * src)
     if (!addr)
       goto name_resolve;
 
+    if (src->source) {
+      GST_DEBUG_OBJECT (src, "using source specific %s", src->source);
+      src_addr = gst_udpsrc_resolve (src, src->source);
+      if (!src_addr)
+        goto name_resolve;
+    }
+
     if ((src->used_socket =
             g_socket_new (g_inet_address_get_family (addr),
                 G_SOCKET_TYPE_DATAGRAM, G_SOCKET_PROTOCOL_UDP, &err)) == NULL)
@@ -1542,6 +1589,15 @@ gst_udpsrc_open (GstUDPSrc * src)
       g_object_unref (src->addr);
     src->addr =
         G_INET_SOCKET_ADDRESS (g_inet_socket_address_new (addr, src->port));
+
+    if (src->src_addr)
+      g_object_unref (src->src_addr);
+    if (src_addr) {
+      src->src_addr =
+          G_INET_SOCKET_ADDRESS (g_inet_socket_address_new (src_addr,
+              src->port));
+      g_clear_object (&src_addr);
+    }
 
     GST_DEBUG_OBJECT (src, "binding on port %d", src->port);
 
@@ -1663,11 +1719,14 @@ gst_udpsrc_open (GstUDPSrc * src)
       gchar **ifaces = multi_ifaces;
       while (*ifaces) {
         g_strstrip (*ifaces);
-        GST_DEBUG_OBJECT (src, "joining multicast group %s interface %s",
-            src->address, *ifaces);
-        if (!g_socket_join_multicast_group (src->used_socket,
+        GST_DEBUG_OBJECT (src,
+            "joining multicast group %s (source %s) interface %s", src->address,
+            GST_STR_NULL (src->source), *ifaces);
+        if (!g_socket_join_multicast_group_ssm (src->used_socket,
                 g_inet_socket_address_get_address (src->addr),
-                FALSE, *ifaces, &err)) {
+                src->
+                src_addr ? g_inet_socket_address_get_address (src->src_addr) :
+                NULL, *ifaces, &err)) {
           g_strfreev (multi_ifaces);
           goto membership;
         }
@@ -1676,9 +1735,13 @@ gst_udpsrc_open (GstUDPSrc * src)
       }
       g_strfreev (multi_ifaces);
     } else {
-      GST_DEBUG_OBJECT (src, "joining multicast group %s", src->address);
-      if (!g_socket_join_multicast_group (src->used_socket,
-              g_inet_socket_address_get_address (src->addr), FALSE, NULL, &err))
+      GST_DEBUG_OBJECT (src, "joining multicast group %s (source %s)",
+          src->address, GST_STR_NULL (src->source));
+      if (!g_socket_join_multicast_group_ssm (src->used_socket,
+              g_inet_socket_address_get_address (src->addr),
+              src->
+              src_addr ? g_inet_socket_address_get_address (src->src_addr) :
+              NULL, NULL, &err))
         goto membership;
     }
 
@@ -1787,6 +1850,7 @@ no_socket:
     GST_ELEMENT_ERROR (src, RESOURCE, OPEN_READ, (NULL),
         ("no socket error: %s", err->message));
     g_clear_error (&err);
+    g_clear_object (&src_addr);
     g_object_unref (addr);
     return FALSE;
   }
@@ -1862,11 +1926,14 @@ gst_udpsrc_close (GstUDPSrc * src)
         gchar **ifaces = multi_ifaces;
         while (*ifaces) {
           g_strstrip (*ifaces);
-          GST_DEBUG_OBJECT (src, "leaving multicast group %s interface %s",
-              src->address, *ifaces);
-          if (!g_socket_leave_multicast_group (src->used_socket,
+          GST_DEBUG_OBJECT (src,
+              "leaving multicast group %s (source %s) interface %s",
+              src->address, GST_STR_NULL (src->source), *ifaces);
+          if (!g_socket_leave_multicast_group_ssm (src->used_socket,
                   g_inet_socket_address_get_address (src->addr),
-                  FALSE, *ifaces, &err)) {
+                  src->
+                  src_addr ? g_inet_socket_address_get_address (src->src_addr) :
+                  NULL, *ifaces, &err)) {
             GST_ERROR_OBJECT (src, "Failed to leave multicast group: %s",
                 err->message);
             g_clear_error (&err);
@@ -1876,10 +1943,13 @@ gst_udpsrc_close (GstUDPSrc * src)
         g_strfreev (multi_ifaces);
 
       } else {
-        GST_DEBUG_OBJECT (src, "leaving multicast group %s", src->address);
-        if (!g_socket_leave_multicast_group (src->used_socket,
-                g_inet_socket_address_get_address (src->addr), FALSE,
-                NULL, &err)) {
+        GST_DEBUG_OBJECT (src, "leaving multicast group %s (source %s)",
+            src->address, GST_STR_NULL (src->source));
+        if (!g_socket_leave_multicast_group_ssm (src->used_socket,
+                g_inet_socket_address_get_address (src->addr),
+                src->
+                src_addr ? g_inet_socket_address_get_address (src->src_addr) :
+                NULL, NULL, &err)) {
           GST_ERROR_OBJECT (src, "Failed to leave multicast group: %s",
               err->message);
           g_clear_error (&err);
@@ -1899,6 +1969,10 @@ gst_udpsrc_close (GstUDPSrc * src)
     src->used_socket = NULL;
     g_object_unref (src->addr);
     src->addr = NULL;
+    if (src->src_addr) {
+      g_object_unref (src->src_addr);
+      src->src_addr = NULL;
+    }
   }
 
   gst_udpsrc_free_cancellable (src);

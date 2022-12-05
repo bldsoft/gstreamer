@@ -65,6 +65,7 @@ struct _GstUDPSrc {
   /* our sockets */
   GSocket   *used_socket;	/* hot */
   GInetSocketAddress *addr;	/* hot */
+  GInetSocketAddress *src_addr; /* hot */
 
   GCancellable *cancellable;	/* hot */
 
@@ -73,6 +74,7 @@ struct _GstUDPSrc {
   guint64    timeout;	/* hot */
   gboolean   retrieve_sender_address;	/* hot */
   gchar     *address;
+  gchar     *source;
   gint       port;
   gchar     *multi_iface;
   GstCaps   *caps;

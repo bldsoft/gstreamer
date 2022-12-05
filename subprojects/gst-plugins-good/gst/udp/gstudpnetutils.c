@@ -29,7 +29,8 @@
 #include "gstudpnetutils.h"
 
 gboolean
-gst_udp_parse_uri (const gchar * uristr, gchar ** host, guint16 * port)
+gst_udp_parse_uri (const gchar * uristr, gchar ** host, guint16 * port,
+    gchar ** source)
 {
   gchar *protocol, *location_start;
   gchar *location, *location_end;
@@ -49,13 +50,21 @@ gst_udp_parse_uri (const gchar * uristr, gchar ** host, guint16 * port)
 
   GST_DEBUG ("got location '%s'", location_start);
 
+  if (source)
+    *source = NULL;
+
   /* VLC compatibility, strip everything before the @ sign. VLC uses that as the
-   * remote address. */
+   * remote address. And parse source specific IP for IGMPv3. */
   location = g_strstr_len (location_start, -1, "@");
-  if (location == NULL)
+  if (location == NULL) {
     location = location_start;
-  else
+  } else {
+    if (source && ((location - location_start) > 0)) {
+      *source = g_strndup (location_start, location - location_start);
+      GST_DEBUG ("source ip address set to '%s'", *source);
+    }
     location += 1;
+  }
 
   if (location[0] == '[') {
     GST_DEBUG ("parse IPV6 address '%s'", location);
