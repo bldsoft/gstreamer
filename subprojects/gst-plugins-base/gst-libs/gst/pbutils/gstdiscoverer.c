@@ -424,16 +424,7 @@ gst_discoverer_init (GstDiscoverer * dc)
 
   GST_DEBUG_OBJECT (dc, "Done initializing Discoverer");
 
-  /* This is ugly. We get the GType of decodebin so we can quickly detect
-   * when a decodebin is added to uridecodebin so we can set the
-   * post-stream-topology setting to TRUE */
-  dc->priv->element_added_id =
-      g_signal_connect_object (dc->priv->uridecodebin, "element-added",
-      G_CALLBACK (uridecodebin_element_added_cb), dc, 0);
-  tmp = gst_element_factory_make ("decodebin", NULL);
-  dc->priv->decodebin_type = G_OBJECT_TYPE (tmp);
-  gst_object_unref (tmp);
-  tmp = gst_element_factory_make ("tsdemux", NULL);
+  GstElement *tmp = gst_element_factory_make ("tsdemux", NULL);
   dc->priv->tsdemux_type = G_OBJECT_TYPE (tmp);
   gst_object_unref (tmp);
 
