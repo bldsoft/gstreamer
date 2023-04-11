@@ -258,16 +258,6 @@ bool GstOnnxClient::createSession (std::string modelFile,
     return true;
 }
 
-std::vector < GstMlBoundingBox > GstOnnxClient::run (uint8_t * img_data,
-      GstVideoMeta * vmeta, std::string labelPath, float scoreThreshold)
-{
-    auto type = getOutputNodeType (GST_ML_OUTPUT_NODE_FUNCTION_CLASS);
-    return (type ==
-        ONNXTensorElementDataType::ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) ?
-          doRun < float >(img_data, vmeta, labelPath, scoreThreshold)
-            : doRun < int >(img_data, vmeta, labelPath, scoreThreshold);
-}
-
 void GstOnnxClient::parseDimensions (GstVideoMeta * vmeta)
 {
     int32_t newWidth = fixedInputImageSize ? width : vmeta->width;
@@ -281,21 +271,38 @@ void GstOnnxClient::parseDimensions (GstVideoMeta * vmeta)
     height = newHeight;
 }
 
-template < typename T > std::vector < GstMlBoundingBox >
-      GstOnnxClient::doRun (uint8_t * img_data, GstVideoMeta * vmeta,
-      std::string labelPath, float scoreThreshold)
-{
-    std::vector < GstMlBoundingBox > boundingBoxes;
-    if (!img_data)
-      return boundingBoxes;
+uint8_t* GstOnnxClient::runSuperResolution(uint8_t * src,
+                            			GstVideoMeta * vmeta){
+    fillDest(src, vmeta);
 
-    parseDimensions (vmeta);
-
+    auto memoryInfo =
+        Ort::MemoryInfo::CreateCpu (OrtAllocatorType::OrtArenaAllocator,
+        OrtMemType::OrtMemTypeDefault);
+    std::vector < Ort::Value > inputTensors;
+    inputTensors.push_back (Ort::Value::CreateTensor < uint8_t > (memoryInfo,
+						dest, width * height * channels,
+						inputDims.data (), inputDims.size ()));
     Ort::AllocatorWithDefaultOptions allocator;
     auto inputName = session->GetInputNameAllocated (0, allocator);
+    std::vector < const char *>inputNames { inputName.get() };
+
+    return nullptr;
+}
+
+std::vector < GstMlBoundingBox > GstOnnxClient::runObjectDetector (uint8_t * img_data,
+      GstVideoMeta * vmeta, std::string labelPath, float scoreThreshold)
+{
+    auto type = getOutputNodeType (GST_ML_OUTPUT_NODE_FUNCTION_CLASS);
+    return (type ==
+        ONNXTensorElementDataType::ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) ?
+          doRunObjectDetector < float >(img_data, vmeta, labelPath, scoreThreshold)
+            : doRunObjectDetector < int >(img_data, vmeta, labelPath, scoreThreshold);
+}
+
+void GstOnnxClient::fillDest(uint8_t * src, GstVideoMeta * vmeta){
+    parseDimensions (vmeta);
     auto inputTypeInfo = session->GetInputTypeInfo (0);
-    std::vector < int64_t > inputDims =
-        inputTypeInfo.GetTensorTypeAndShapeInfo ().GetShape ();
+    inputDims = inputTypeInfo.GetTensorTypeAndShapeInfo ().GetShape ();
     inputDims[0] = 1;
     if (inputImageFormat == GST_ML_MODEL_INPUT_IMAGE_FORMAT_HWC) {
       inputDims[1] = height;
@@ -304,13 +311,12 @@ template < typename T > std::vector < GstMlBoundingBox >
       inputDims[2] = height;
       inputDims[3] = width;
     }
-
     std::ostringstream buffer;
     buffer << inputDims;
     GST_DEBUG ("Input dimensions: %s", buffer.str ().c_str ());
 
     // copy video frame
-    uint8_t *srcPtr[3] = { img_data, img_data + 1, img_data + 2 };
+    uint8_t *srcPtr[3] = { src, src + 1, src + 2 };
     uint32_t srcSamplesPerPixel = 3;
     switch (vmeta->format) {
       case GST_VIDEO_FORMAT_RGBA:
@@ -318,26 +324,26 @@ template < typename T > std::vector < GstMlBoundingBox >
         break;
       case GST_VIDEO_FORMAT_BGRA:
         srcSamplesPerPixel = 4;
-        srcPtr[0] = img_data + 2;
-        srcPtr[1] = img_data + 1;
-        srcPtr[2] = img_data + 0;
+        srcPtr[0] = src + 2;
+        srcPtr[1] = src + 1;
+        srcPtr[2] = src + 0;
         break;
       case GST_VIDEO_FORMAT_ARGB:
         srcSamplesPerPixel = 4;
-        srcPtr[0] = img_data + 1;
-        srcPtr[1] = img_data + 2;
-        srcPtr[2] = img_data + 3;
+        srcPtr[0] = src + 1;
+        srcPtr[1] = src + 2;
+        srcPtr[2] = src + 3;
         break;
       case GST_VIDEO_FORMAT_ABGR:
         srcSamplesPerPixel = 4;
-        srcPtr[0] = img_data + 3;
-        srcPtr[1] = img_data + 2;
-        srcPtr[2] = img_data + 1;
+        srcPtr[0] = src + 3;
+        srcPtr[1] = src + 2;
+        srcPtr[2] = src + 1;
         break;
       case GST_VIDEO_FORMAT_BGR:
-        srcPtr[0] = img_data + 2;
-        srcPtr[1] = img_data + 1;
-        srcPtr[2] = img_data + 0;
+        srcPtr[0] = src + 2;
+        srcPtr[1] = src + 1;
+        srcPtr[2] = src + 0;
         break;
       default:
         break;
@@ -372,15 +378,28 @@ template < typename T > std::vector < GstMlBoundingBox >
           srcPtr[k] += stride - srcSamplesPerPixel * width;
       }
     }
+}
 
-    const size_t inputTensorSize = width * height * channels;
+template < typename T > std::vector < GstMlBoundingBox >
+      GstOnnxClient::doRunObjectDetector (uint8_t * src, GstVideoMeta * vmeta,
+      std::string labelPath, float scoreThreshold)
+{
+    std::vector < GstMlBoundingBox > boundingBoxes;
+    if (!src)
+      return boundingBoxes;
+
+    fillDest(src, vmeta);
+
     auto memoryInfo =
         Ort::MemoryInfo::CreateCpu (OrtAllocatorType::OrtArenaAllocator,
         OrtMemType::OrtMemTypeDefault);
     std::vector < Ort::Value > inputTensors;
     inputTensors.push_back (Ort::Value::CreateTensor < uint8_t > (memoryInfo,
-            dest, inputTensorSize, inputDims.data (), inputDims.size ()));
-    std::vector < const char *>inputNames { inputName.get () };
+            dest, width * height * channels,
+			inputDims.data (), inputDims.size ()));
+    Ort::AllocatorWithDefaultOptions allocator;
+    auto inputName = session->GetInputNameAllocated (0, allocator);
+    std::vector < const char *>inputNames { inputName.get() };
 
     std::vector < Ort::Value > modelOutput = session->Run (Ort::RunOptions { nullptr},
         inputNames.data (),
@@ -402,8 +421,12 @@ template < typename T > std::vector < GstMlBoundingBox >
           modelOutput[getOutputNodeIndex
           (GST_ML_OUTPUT_NODE_FUNCTION_CLASS)].GetTensorMutableData < T > ();
     }
-    if (labels.empty () && !labelPath.empty ())
-      labels = ReadLabels (labelPath);
+    if (labels.empty () && !labelPath.empty ()){
+        std::string line;
+        std::ifstream fp (labelPath);
+        while (std::getline (fp, line))
+          labels.push_back (line);
+    }
 
     for (int i = 0; i < numDetections[0]; ++i) {
       if (scores[i] > scoreThreshold) {
@@ -423,15 +446,4 @@ template < typename T > std::vector < GstMlBoundingBox >
     return boundingBoxes;
 }
 
-std::vector < std::string >
-    GstOnnxClient::ReadLabels (const std::string & labelsFile)
-{
-    std::vector < std::string > labels;
-    std::string line;
-    std::ifstream fp (labelsFile);
-    while (std::getline (fp, line))
-      labels.push_back (line);
-
-    return labels;
-  }
 }

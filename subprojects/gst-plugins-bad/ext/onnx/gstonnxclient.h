@@ -80,21 +80,23 @@ namespace GstOnnxNamespace {
                            ONNXTensorElementDataType type);
     ONNXTensorElementDataType getOutputNodeType(GstMlOutputNodeFunction type);
     std::string getOutputNodeName(GstMlOutputNodeFunction nodeType);
-    std::vector < GstMlBoundingBox > run(uint8_t * img_data,
-                                          GstVideoMeta * vmeta,
-                                          std::string labelPath,
-                                          float scoreThreshold);
-    std::vector < GstMlBoundingBox > &getBoundingBoxes(void);
     std::vector < const char *>getOutputNodeNames(void);
     bool isFixedInputImageSize(void);
     int32_t getWidth(void);
     int32_t getHeight(void);
+    std::vector < GstMlBoundingBox > runObjectDetector(uint8_t * src,
+                                          GstVideoMeta * vmeta,
+                                          std::string labelPath,
+                                          float scoreThreshold);
+    std::vector < GstMlBoundingBox > &getBoundingBoxes(void);
+    uint8_t* runSuperResolution(uint8_t * src,
+                                GstVideoMeta * vmeta);
   private:
+    void fillDest(uint8_t * src, GstVideoMeta * vmeta);
     void parseDimensions(GstVideoMeta * vmeta);
     template < typename T > std::vector < GstMlBoundingBox >
-    doRun(uint8_t * img_data, GstVideoMeta * vmeta, std::string labelPath,
+    doRunObjectDetector(uint8_t * src, GstVideoMeta * vmeta, std::string labelPath,
             float scoreThreshold);
-    std::vector < std::string > ReadLabels(const std::string & labelsFile);
     Ort::Env & getEnv(void);
     Ort::Session * session;
     int32_t width;
@@ -104,6 +106,7 @@ namespace GstOnnxNamespace {
     GstOnnxExecutionProvider m_provider;
     std::vector < Ort::Value > modelOutput;
     std::vector < std::string > labels;
+    std::vector < int64_t > inputDims;
     // !! indexed by function
     GstMlOutputNodeInfo outputNodeInfo[GST_ML_OUTPUT_NODE_NUMBER_OF];
     // !! indexed by array index

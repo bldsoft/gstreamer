@@ -18,6 +18,7 @@ if onnxrt_dep.found()
     'gstonnx.c',
     'gstonnxelement.c',
     'gstonnxobjectdetector.cpp',
+    'gstonnxsuperresolution.cpp',
     'gstonnxclient.cpp',
     c_args : gst_plugins_bad_args,
     cpp_args: onnxrt_dep_args,

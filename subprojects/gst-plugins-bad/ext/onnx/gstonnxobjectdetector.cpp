@@ -122,8 +122,6 @@ enum
 };
 
 
-#define GST_ONNX_OBJECT_DETECTOR_DEFAULT_EXECUTION_PROVIDER    GST_ONNX_EXECUTION_PROVIDER_CPU
-#define GST_ONNX_OBJECT_DETECTOR_DEFAULT_OPTIMIZATION_LEVEL    GST_ONNX_OPTIMIZATION_LEVEL_ENABLE_EXTENDED
 #define GST_ONNX_OBJECT_DETECTOR_DEFAULT_SCORE_THRESHOLD       0.3f     /* 0 to 1 */
 
 static GstStaticPadTemplate gst_onnx_object_detector_src_template =
@@ -643,7 +641,7 @@ gst_onnx_object_detector_process (GstBaseTransform * trans, GstBuffer * buf)
   }
   if (gst_buffer_map (buf, &info, GST_MAP_READ)) {
     GstOnnxObjectDetector *self = GST_ONNX_OBJECT_DETECTOR (trans);
-    auto boxes = GST_ONNX_MEMBER (self)->run (info.data, vmeta,
+    auto boxes = GST_ONNX_MEMBER (self)->runObjectDetector (info.data, vmeta,
         self->label_file ? self->label_file : "",
         self->score_threshold);
   for (auto & b:boxes) {

@@ -24,13 +24,15 @@
 #endif
 
 #include "gstonnxobjectdetector.h"
+#include "gstonnxsuperresolution.h"
 
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
-  GST_ELEMENT_REGISTER (onnx_object_detector, plugin);
+  gboolean success = GST_ELEMENT_REGISTER (onnx_object_detector, plugin);
+  success = GST_ELEMENT_REGISTER (onnxsuperresolution, plugin) || success;
 
-  return TRUE;
+  return success;
 }
 
 GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
