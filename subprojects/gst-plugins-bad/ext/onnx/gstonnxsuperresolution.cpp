@@ -630,14 +630,15 @@ gst_onnx_super_resolution_transform_frame (GstVideoFilter * filter,
   GstFlowReturn ret = GST_FLOW_OK;
 
   GST_CAT_DEBUG_OBJECT (CAT_PERFORMANCE, filter, "doing video scaling");
-/*
-  if (!gst_base_transform_is_passthrough (trans)
-      && !gst_onnx_super_resolution_process (trans, buf)){
-	    GST_ELEMENT_WARNING (trans, STREAM, FAILED,
+
+  if (!gst_base_transform_is_passthrough (GST_BASE_TRANSFORM_CAST(filter))
+      && !gst_onnx_super_resolution_process (GST_BASE_TRANSFORM_CAST(filter), in_frame->buffer)){
+	    GST_ELEMENT_WARNING (filter, STREAM, FAILED,
           ("ONNX object detection failed"), (NULL));
 	    return GST_FLOW_ERROR;
   }
-*/
+
+  gst_buffer_replace(&out_frame->buffer, in_frame->buffer);
 
   return ret;
 }
@@ -654,10 +655,8 @@ gst_onnx_super_resolution_process (GstBaseTransform * trans, GstBuffer * buf)
     return FALSE;
   }
   if (gst_buffer_map (buf, &info, GST_MAP_READ)) {
-    //GstOnnxSuperResolution *self = GST_ONNX_SUPER_RESOLUTION (trans);
-    //auto boxes = GST_ONNX_MEMBER (self)->run (info.data, vmeta,
-    //    self->label_file ? self->label_file : "",
-    //    self->score_threshold);
+    GstOnnxSuperResolution *self = GST_ONNX_SUPER_RESOLUTION (trans);
+    auto boxes = GST_ONNX_MEMBER (self)->runSuperResolution (info.data, vmeta);
     gst_buffer_unmap (buf, &info);
   }
 
