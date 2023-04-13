@@ -244,9 +244,13 @@ static gboolean gst_decklink_video_src_stop (GstDecklinkVideoSrc * self);
 
 static void gst_decklink_video_src_start_streams (GstElement * element);
 
+static void gst_decklink_uri_handler_init (gpointer g_iface,
+    gpointer iface_data);
+
 #define parent_class gst_decklink_video_src_parent_class
-G_DEFINE_TYPE (GstDecklinkVideoSrc, gst_decklink_video_src, GST_TYPE_PUSH_SRC);
-GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (decklinkvideosrc, "decklinkvideosrc", GST_RANK_NONE,
+G_DEFINE_TYPE_WITH_CODE (GstDecklinkVideoSrc, gst_decklink_video_src, GST_TYPE_PUSH_SRC,
+  G_IMPLEMENT_INTERFACE (GST_TYPE_URI_HANDLER, gst_decklink_uri_handler_init));
+GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (decklinkvideosrc, "decklinkvideosrc", GST_RANK_MARGINAL,
     GST_TYPE_DECKLINK_VIDEO_SRC, decklink_element_init (plugin));
 
 static void
@@ -1765,4 +1769,74 @@ gst_decklink_video_src_change_state (GstElement * element,
 out:
 
   return ret;
+}
+
+/* GstURIHandler interface */
+static GstURIType
+gst_decklink_uri_get_type (GType type)
+{
+  return GST_URI_SRC;
+}
+
+static const gchar *const *
+gst_decklink_uri_get_protocols (GType type)
+{
+  static const gchar *protocols[] = { "decklink", NULL };
+
+  return protocols;
+}
+
+static gchar *
+gst_decklink_uri_get_uri (GstURIHandler * handler)
+{
+  return NULL;
+}
+
+static void
+gst_decklink_uri_query_foreach (const gchar * key, const gchar * value,
+    GObject * src)
+{
+  if (g_str_equal (key, "device-number")) {
+    gst_util_set_object_arg(src, "device-number", value);
+    return;
+  }
+  if (g_str_equal (key, "connection") || g_str_equal (key, "video-connection")) {
+    gst_util_set_object_arg(src, "connection", value);
+    return;
+  }
+  if (g_str_equal (key, "mode")) {
+    gst_util_set_object_arg(src, "mode", value);
+    return;
+  }
+}
+
+static gboolean
+gst_decklink_uri_set_uri (GstURIHandler * handler, const gchar * str_uri,
+    GError ** error)
+{
+  GstDecklinkVideoSrc *decklinkvideosrc = GST_DECKLINK_VIDEO_SRC (handler);
+
+  GstUri *uri = gst_uri_from_string (str_uri);
+  GHashTable *hash_table = gst_uri_get_query_table (uri);
+
+  if (hash_table) {
+    g_hash_table_foreach (hash_table,
+        (GHFunc) gst_decklink_uri_query_foreach, decklinkvideosrc);
+    g_hash_table_unref (hash_table);
+  }
+
+  gst_uri_unref (uri);
+
+  return TRUE;
+}
+
+static void
+gst_decklink_uri_handler_init (gpointer g_iface, gpointer iface_data)
+{
+  GstURIHandlerInterface *iface = (GstURIHandlerInterface *) g_iface;
+
+  iface->get_type = gst_decklink_uri_get_type;
+  iface->get_protocols = gst_decklink_uri_get_protocols;
+  iface->get_uri = gst_decklink_uri_get_uri;
+  iface->set_uri = gst_decklink_uri_set_uri;
 }
