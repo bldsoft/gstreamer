@@ -53,6 +53,8 @@ struct _GstOnnxSuperResolution {
   GstOnnxExecutionProvider execution_provider;
   gpointer onnx_ptr;
   gboolean onnx_disabled;
+
+  GstVideoConverter *convert;
 };
 
 GST_ELEMENT_REGISTER_DECLARE (onnxsuperresolution)

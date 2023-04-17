@@ -492,8 +492,8 @@ gst_onnx_super_resolution_set_info (GstVideoFilter * filter, GstCaps * in,
     /*
      * SUPERRES: Replace this with the init of algo
      */
-/*
-    options = gst_structure_new ("videoscale",
+
+    GstStructure * options = gst_structure_new ("videoscale",
         GST_VIDEO_CONVERTER_OPT_RESAMPLER_METHOD,
         GST_TYPE_VIDEO_RESAMPLER_METHOD, GST_VIDEO_RESAMPLER_METHOD_NEAREST,
         GST_VIDEO_RESAMPLER_OPT_ENVELOPE, G_TYPE_DOUBLE, 2.0,
@@ -511,7 +511,7 @@ gst_onnx_super_resolution_set_info (GstVideoFilter * filter, GstCaps * in,
         GST_VIDEO_CONVERTER_OPT_THREADS, G_TYPE_UINT, 1, NULL);
 
    videoscale->convert = gst_video_converter_new (in_info, out_info, options);
-*/
+
     /* End init */
   }
 
@@ -627,6 +627,7 @@ static GstFlowReturn
 gst_onnx_super_resolution_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * in_frame, GstVideoFrame * out_frame)
 {
+  GstOnnxSuperResolution *priv = GST_ONNX_SUPER_RESOLUTION (filter);
   GstFlowReturn ret = GST_FLOW_OK;
 
   GST_CAT_DEBUG_OBJECT (CAT_PERFORMANCE, filter, "doing video scaling");
@@ -638,7 +639,7 @@ gst_onnx_super_resolution_transform_frame (GstVideoFilter * filter,
 	    return GST_FLOW_ERROR;
   }
 
-  gst_buffer_replace(&out_frame->buffer, in_frame->buffer);
+  gst_video_converter_frame (priv->convert, in_frame, out_frame);
 
   return ret;
 }
