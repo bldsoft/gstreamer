@@ -145,6 +145,7 @@ struct _GstDiscovererPrivate
   gulong source_chg_id;
   gulong bus_cb_id;
   gulong decodebin_cb_id;
+  gulong element_added_id;
 
   gboolean use_cache;
 
@@ -454,6 +455,9 @@ gst_discoverer_init (GstDiscoverer * dc)
   dc->priv->source_chg_id =
       g_signal_connect_object (dc->priv->uridecodebin, "notify::source",
       G_CALLBACK (uridecodebin_source_changed_cb), dc, 0);
+  dc->priv->element_added_id =
+      g_signal_connect_object (dc->priv->uridecodebin, "element-added",
+      G_CALLBACK (uridecodebin_element_added_cb), dc, 0);
 
   GST_LOG_OBJECT (dc, "Getting pipeline bus");
   dc->priv->bus = gst_pipeline_get_bus ((GstPipeline *) dc->priv->pipeline);
@@ -464,7 +468,13 @@ gst_discoverer_init (GstDiscoverer * dc)
 
   GST_DEBUG_OBJECT (dc, "Done initializing Discoverer");
 
-  GstElement *tmp = gst_element_factory_make ("tsdemux", NULL);
+  GstElement *tmp = NULL;
+
+  tmp = gst_element_factory_make ("decodebin", NULL);
+  dc->priv->decodebin_type = G_OBJECT_TYPE (tmp);
+  gst_object_unref (tmp);
+
+  tmp = gst_element_factory_make ("tsdemux", NULL);
   dc->priv->tsdemux_type = G_OBJECT_TYPE (tmp);
   gst_object_unref (tmp);
 
@@ -508,6 +518,7 @@ gst_discoverer_dispose (GObject * obj)
     DISCONNECT_SIGNAL (dc->priv->uridecodebin, dc->priv->pad_remove_id);
     DISCONNECT_SIGNAL (dc->priv->uridecodebin, dc->priv->no_more_pads_id);
     DISCONNECT_SIGNAL (dc->priv->uridecodebin, dc->priv->source_chg_id);
+    DISCONNECT_SIGNAL (dc->priv->uridecodebin, dc->priv->element_added_id);
     DISCONNECT_SIGNAL (dc->priv->bus, dc->priv->bus_cb_id);
 
     /* pipeline was set to NULL in _reset */
