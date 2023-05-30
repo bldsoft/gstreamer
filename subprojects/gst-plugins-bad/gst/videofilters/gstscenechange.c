@@ -264,15 +264,16 @@ gst_scene_change_transform_frame_ip (GstVideoFilter * filter,
     GST_INFO_OBJECT (scenechange, "%d %g %g %g %d",
         scenechange->n_diffs, score / threshold, score, threshold, change);
 
+    GstClockTime pts = GST_BUFFER_PTS (frame->buffer);
+
     event =
-        gst_video_event_new_downstream_force_key_unit (GST_BUFFER_PTS
-        (frame->buffer), GST_CLOCK_TIME_NONE, GST_CLOCK_TIME_NONE, FALSE,
-        scenechange->count++);
+        gst_video_event_new_downstream_force_key_unit (pts,
+        GST_CLOCK_TIME_NONE, GST_CLOCK_TIME_NONE, FALSE, scenechange->count++);
 
     gst_pad_push_event (GST_BASE_TRANSFORM_SRC_PAD (scenechange), event);
 
     g_signal_emit (scenechange, signals[SIGNAL_SCENE_CHANGED], 0,
-        GST_BUFFER_PTS (frame->buffer), score, threshold);
+        pts, score, threshold);
   }
 
   return GST_FLOW_OK;
