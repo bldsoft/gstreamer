@@ -117,6 +117,8 @@ static void gst_ffmpegdemux_class_init (GstFFMpegDemuxClass * klass);
 static void gst_ffmpegdemux_base_init (GstFFMpegDemuxClass * klass);
 static void gst_ffmpegdemux_init (GstFFMpegDemux * demux);
 static void gst_ffmpegdemux_finalize (GObject * object);
+static void gst_ffmpegdemux_get_property(GObject *object, guint prop_id,
+                                         GValue *value, GParamSpec *spec);
 
 static gboolean gst_ffmpegdemux_sink_event (GstPad * sinkpad,
     GstObject * parent, GstEvent * event);
@@ -144,6 +146,16 @@ gst_ffmpegdemux_change_state (GstElement * element, GstStateChange transition);
 #define GST_FFDEMUX_PARAMS_QDATA g_quark_from_static_string("avdemux-params")
 
 static GstElementClass *parent_class = NULL;
+
+enum
+{
+  PROP_0,
+  PROP_GSTAVDEMUX_C_PATCH_VERSION,
+  PROP_GSTAVCODECMAP_C_PATCH_VERSION
+};
+
+extern const int RIXJOB_GSTAVCODECMAP_C_PATCH_VERSION;
+const int RIXJOB_GSTAVDEMUX_C_PATCH_VERSION = 1;
 
 static const gchar *
 gst_ffmpegdemux_averror (gint av_errno)
@@ -238,9 +250,23 @@ gst_ffmpegdemux_class_init (GstFFMpegDemuxClass * klass)
   parent_class = g_type_class_peek_parent (klass);
 
   gobject_class->finalize = GST_DEBUG_FUNCPTR (gst_ffmpegdemux_finalize);
+  gobject_class->get_property = gst_ffmpegdemux_get_property;
 
   gstelement_class->change_state = gst_ffmpegdemux_change_state;
   gstelement_class->send_event = gst_ffmpegdemux_send_event;
+
+  g_object_class_install_property (gobject_class,
+      PROP_GSTAVDEMUX_C_PATCH_VERSION,
+      g_param_spec_uint("gstavdemux-c-patch-version",
+          "gstavdemux.c patch version", "gstavdemux.c patch version",
+          0, G_MAXUINT, RIXJOB_GSTAVDEMUX_C_PATCH_VERSION,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class,
+      PROP_GSTAVCODECMAP_C_PATCH_VERSION,
+      g_param_spec_uint ("gstavcodecmap-c-patch-version",
+          "gstavcodecmap.c patch version", "gstavcodecmap.c patch version",
+          0, G_MAXUINT, RIXJOB_GSTAVCODECMAP_C_PATCH_VERSION,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
 }
 
 static void
@@ -2115,7 +2141,9 @@ gst_ffmpegdemux_register (GstPlugin * plugin)
      *
      * Since: 1.20
      */
-    if (!strcmp (in_plugin->name, "wsvqa") ||
+    if (!strcmp (in_plugin->name, "mpegts") ||
+        !strcmp (in_plugin->name, "mpegtsraw") ||
+	      !strcmp (in_plugin->name, "wsvqa") ||
         !strcmp (in_plugin->name, "wsaud") ||
         !strcmp (in_plugin->name, "wc3movie") ||
         !strcmp (in_plugin->name, "voc") ||
@@ -2202,4 +2230,21 @@ gst_ffmpegdemux_register (GstPlugin * plugin)
   GST_LOG ("Finished registering demuxers");
 
   return TRUE;
+}
+
+static void
+gst_ffmpegdemux_get_property (GObject * object, guint prop_id, GValue * value,
+    GParamSpec * spec)
+{
+  switch (prop_id) {
+    case PROP_GSTAVDEMUX_C_PATCH_VERSION:
+      g_value_set_uint (value, RIXJOB_GSTAVDEMUX_C_PATCH_VERSION);
+      break;
+    case PROP_GSTAVCODECMAP_C_PATCH_VERSION:
+      g_value_set_uint (value, RIXJOB_GSTAVCODECMAP_C_PATCH_VERSION);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, spec);
+      break;
+  }
 }

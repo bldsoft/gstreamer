@@ -189,6 +189,8 @@ struct TsMux {
   guint8 pid_packet_counts[8192];
 
   gint64 first_pcr_ts;
+
+  gint64 timestamp_shift;
 };
 
 /* create/free new muxer session */
@@ -204,7 +206,7 @@ guint 		tsmux_get_pat_interval          (TsMux *mux);
 void 		tsmux_resend_pat                (TsMux *mux);
 guint16		tsmux_get_new_pid 		(TsMux *mux);
 void    tsmux_set_bitrate       (TsMux *mux, guint64 bitrate);
-
+void 		tsmux_timestamp_shift       (TsMux *mux, gint64 shift);
 /* pid/program management */
 TsMuxProgram *	tsmux_program_new 		(TsMux *mux, gint prog_id);
 void 		tsmux_program_free 		(TsMuxProgram *program);

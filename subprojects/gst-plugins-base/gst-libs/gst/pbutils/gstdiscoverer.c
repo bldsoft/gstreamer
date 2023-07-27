@@ -127,6 +127,9 @@ struct _GstDiscovererPrivate
   GstElement *uridecodebin;
   GstBus *bus;
 
+  GType decodebin_type;
+  GType tsdemux_type;
+
   /* Custom main context variables */
   GMainContext *ctx;
   GSource *bus_source;
@@ -141,8 +144,12 @@ struct _GstDiscovererPrivate
   gulong no_more_pads_id;
   gulong source_chg_id;
   gulong bus_cb_id;
+  gulong decodebin_cb_id;
+  gulong element_added_id;
 
   gboolean use_cache;
+
+  gint mpegts_program_number;
 };
 
 #define DISCO_LOCK(dc) g_mutex_lock (&dc->priv->lock);
@@ -182,7 +189,8 @@ enum
 {
   PROP_0,
   PROP_TIMEOUT,
-  PROP_USE_CACHE
+  PROP_USE_CACHE,
+  PROP_MPEGTS_PROGRAM_NUMBER
 };
 
 static guint gst_discoverer_signals[LAST_SIGNAL] = { 0 };
@@ -261,6 +269,11 @@ gst_discoverer_class_init (GstDiscovererClass * klass)
           DEFAULT_PROP_USE_CACHE,
           G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_class, PROP_MPEGTS_PROGRAM_NUMBER,
+      g_param_spec_int ("mpegts-program-number", "mpegts program number",
+          "mpegts program number to demux for (-1 to ignore)", -1, G_MAXINT,
+          -1, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   /* signals */
   /**
    * GstDiscoverer::finished:
@@ -326,6 +339,33 @@ gst_discoverer_class_init (GstDiscovererClass * klass)
 }
 
 static void
+decodebin_element_added_cb (GstElement * decodebin,
+    GstElement * child, GstDiscoverer * dc)
+{
+  GST_DEBUG ("New element added to decodebin : %s", GST_ELEMENT_NAME (child));
+
+  if (G_OBJECT_TYPE (child) == dc->priv->tsdemux_type) {
+    g_object_set (child, "program-number", dc->priv->mpegts_program_number,
+        NULL);
+    g_signal_handler_disconnect (decodebin, dc->priv->decodebin_cb_id);
+  }
+}
+
+static void
+uridecodebin_element_added_cb (GstElement * uridecodebin,
+    GstElement * child, GstDiscoverer * dc)
+{
+  GST_DEBUG ("New element added to uridecodebin : %s",
+      GST_ELEMENT_NAME (child));
+
+  if (G_OBJECT_TYPE (child) == dc->priv->decodebin_type) {
+    g_object_set (child, "post-stream-topology", TRUE, NULL);
+    dc->priv->decodebin_cb_id = g_signal_connect_object (child, "element-added",
+        G_CALLBACK (decodebin_element_added_cb), dc, 0);
+  }
+}
+
+static void
 gst_discoverer_init (GstDiscoverer * dc)
 {
   GstFormat format = GST_FORMAT_TIME;
@@ -335,6 +375,7 @@ gst_discoverer_init (GstDiscoverer * dc)
   dc->priv->timeout = DEFAULT_PROP_TIMEOUT;
   dc->priv->use_cache = DEFAULT_PROP_USE_CACHE;
   dc->priv->async = FALSE;
+  dc->priv->mpegts_program_number = -1;
 
   g_mutex_init (&dc->priv->lock);
 
@@ -374,6 +415,9 @@ gst_discoverer_init (GstDiscoverer * dc)
   dc->priv->source_chg_id =
       g_signal_connect_object (dc->priv->uridecodebin, "notify::source",
       G_CALLBACK (uridecodebin_source_changed_cb), dc, 0);
+  dc->priv->element_added_id =
+      g_signal_connect_object (dc->priv->uridecodebin, "element-added",
+      G_CALLBACK (uridecodebin_element_added_cb), dc, 0);
 
   GST_LOG_OBJECT (dc, "Getting pipeline bus");
   dc->priv->bus = gst_pipeline_get_bus ((GstPipeline *) dc->priv->pipeline);
@@ -383,6 +427,16 @@ gst_discoverer_init (GstDiscoverer * dc)
       G_CALLBACK (discoverer_bus_cb), dc, 0);
 
   GST_DEBUG_OBJECT (dc, "Done initializing Discoverer");
+
+  GstElement *tmp = NULL;
+
+  tmp = gst_element_factory_make ("decodebin", NULL);
+  dc->priv->decodebin_type = G_OBJECT_TYPE (tmp);
+  gst_object_unref (tmp);
+
+  tmp = gst_element_factory_make ("tsdemux", NULL);
+  dc->priv->tsdemux_type = G_OBJECT_TYPE (tmp);
+  gst_object_unref (tmp);
 
   /* create queries */
   dc->priv->seeking_query = gst_query_new_seeking (format);
@@ -424,6 +478,7 @@ gst_discoverer_dispose (GObject * obj)
     DISCONNECT_SIGNAL (dc->priv->uridecodebin, dc->priv->pad_remove_id);
     DISCONNECT_SIGNAL (dc->priv->uridecodebin, dc->priv->no_more_pads_id);
     DISCONNECT_SIGNAL (dc->priv->uridecodebin, dc->priv->source_chg_id);
+    DISCONNECT_SIGNAL (dc->priv->uridecodebin, dc->priv->element_added_id);
     DISCONNECT_SIGNAL (dc->priv->bus, dc->priv->bus_cb_id);
 
     /* pipeline was set to NULL in _reset */
@@ -470,6 +525,9 @@ gst_discoverer_set_property (GObject * object, guint prop_id,
       DISCO_LOCK (dc);
       dc->priv->use_cache = g_value_get_boolean (value);
       DISCO_UNLOCK (dc);
+      break;
+    case PROP_MPEGTS_PROGRAM_NUMBER:
+      dc->priv->mpegts_program_number = g_value_get_int (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
