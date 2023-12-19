@@ -202,6 +202,8 @@ struct TsMuxStream {
   gint audio_channels;
   gint audio_bitrate;
 
+  gboolean is_dvb_teletext;
+
   gboolean is_dvb_sub;
   gchar language[4];
 

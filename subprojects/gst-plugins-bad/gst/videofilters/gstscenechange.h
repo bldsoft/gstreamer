@@ -50,6 +50,9 @@ struct _GstSceneChange
 struct _GstSceneChangeClass
 {
   GstVideoFilterClass base_scenechange_class;
+
+  void (*scene_changed) (GstSceneChange* scene_change,
+                         size_t dts, double score, double threshold);
 };
 
 GType gst_scene_change_get_type (void);
