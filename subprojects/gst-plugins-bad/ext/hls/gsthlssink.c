@@ -372,7 +372,8 @@ gst_hls_sink_reset (GstHlsSink * sink)
   }
   if (!sink->playlist) {
     sink->playlist =
-        gst_m3u8_playlist_new (GST_M3U8_PLAYLIST_VERSION, sink->playlist_length);
+        gst_m3u8_playlist_new (GST_M3U8_PLAYLIST_VERSION,
+        sink->playlist_length);
   }
   sink->last_running_time = 0;
   sink->waiting_fku = FALSE;
@@ -657,6 +658,11 @@ gst_hls_sink_handle_message (GstBin * bin, GstMessage * message)
           sink->program_date_time_shift / (double) GST_SECOND;
       program_date_time = g_date_time_add_seconds (sink->start_time,
           chunk_time);
+
+      GST_INFO_OBJECT (sink,
+          "chunk index = %d, chunk duration = %d ms, chunk time = %d ms, program date time = %"
+          GST_TIME_FORMAT, sink->index, duration / GST_MSECOND,
+          chunk_time / GST_MSECOND, GST_TIME_ARGS (program_date_time));
 
       sink->last_running_time = running_time;
 
