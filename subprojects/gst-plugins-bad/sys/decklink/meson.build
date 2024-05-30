@@ -8,6 +8,29 @@ decklink_sources = [
   'gstdecklinkdeviceprovider.cpp',
 ]
 
+decklink_headers = [
+  'gstdecklink.h',
+  'gstdecklinkaudiosink.h',
+  'gstdecklinkaudiosrc.h',
+  'gstdecklinkdeviceprovider.h',
+  'gstdecklinkvideosink.h',
+  'gstdecklinkvideosrc.h',
+]
+install_headers(decklink_headers, subdir : 'gstreamer-1.0/gst/decklink')
+
+decklink_linux_headers = [
+  'linux/DeckLinkAPI.h',
+  'linux/DeckLinkAPIConfiguration.h',
+  'linux/DeckLinkAPIDeckControl.h',
+  'linux/DeckLinkAPIDiscovery.h',
+  'linux/DeckLinkAPIDispatch.cpp',
+  'linux/DeckLinkAPIModes.h',
+  'linux/DeckLinkAPITypes.h',
+  'linux/DeckLinkAPIVersion.h',
+  'linux/LinuxCOM.h',
+]
+install_headers(decklink_linux_headers, subdir : 'gstreamer-1.0/gst/decklink/linux')
+
 if get_option('decklink').disabled()
   subdir_done()
 endif
