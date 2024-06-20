@@ -301,7 +301,7 @@ gst_deinterlace_locking_get_type (void)
 
 static GstStaticCaps progressive_caps =
 GST_STATIC_CAPS ("video/x-raw(ANY),interlace-mode=(string)progressive");
-static GstStaticCaps deinterlace_caps = GST_STATIC_CAPS (DEINTERLACE_CAPS);
+static GstStaticCaps deinterlace_caps = GST_STATIC_CAPS (DEINTERLACE_ALL_CAPS);
 
 static GstStaticPadTemplate src_templ = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
