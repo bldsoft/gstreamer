@@ -785,16 +785,8 @@ tsmux_stream_default_get_es_descrs (TsMuxStream * stream,
       /* FIXME */
       break;
     case TSMUX_ST_VIDEO_H264:
-    {
-      /* FIXME : Not sure about this additional_identification_info */
-      guint8 add_info[] = { 0xFF, 0x1B, 0x44, 0x3F };
-
-      descriptor = gst_mpegts_descriptor_from_registration ("HDMV",
-          add_info, 4);
-
-      g_ptr_array_add (pmt_stream->descriptors, descriptor);
+      // https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/-/issues/1343
       break;
-    }
     case TSMUX_ST_VIDEO_DIRAC:
       descriptor = gst_mpegts_descriptor_from_registration ("drac", NULL, 0);
       g_ptr_array_add (pmt_stream->descriptors, descriptor);
