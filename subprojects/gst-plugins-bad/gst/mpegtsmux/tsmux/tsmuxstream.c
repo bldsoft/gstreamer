@@ -196,9 +196,17 @@ tsmux_stream_new (guint16 pid, guint stream_type, guint stream_number)
           TSMUX_PACKET_FLAG_PES_EXT_STREAMID;
       break;
     case TSMUX_ST_PS_TELETEXT:
+      stream->id = 0xBD;
+      stream->is_dvb_teletext = TRUE;
+      stream->stream_type = TSMUX_ST_PRIVATE_DATA;
+      stream->pi.flags |=
+          TSMUX_PACKET_FLAG_PES_FULL_HEADER |
+          TSMUX_PACKET_FLAG_PES_DATA_ALIGNMENT;
+
       /* needs fixes PES header length */
       stream->pi.pes_header_length = 36;
-      /* fall through */
+
+      break;
     case TSMUX_ST_PS_DVB_SUBPICTURE:
       /* private stream 1 */
       stream->id = 0xBD;
@@ -798,16 +806,8 @@ tsmux_stream_default_get_es_descrs (TsMuxStream * stream,
       /* FIXME */
       break;
     case TSMUX_ST_VIDEO_H264:
-    {
-      /* FIXME : Not sure about this additional_identification_info */
-      guint8 add_info[] = { 0xFF, 0x1B, 0x44, 0x3F };
-
-      descriptor = gst_mpegts_descriptor_from_registration ("HDMV",
-          add_info, 4);
-
-      g_ptr_array_add (pmt_stream->descriptors, descriptor);
+      // https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/-/issues/1343
       break;
-    }
     case TSMUX_ST_VIDEO_DIRAC:
       descriptor = gst_mpegts_descriptor_from_registration ("drac", NULL, 0);
       g_ptr_array_add (pmt_stream->descriptors, descriptor);
@@ -915,7 +915,14 @@ tsmux_stream_default_get_es_descrs (TsMuxStream * stream,
        * that should never happen anyway as
        * dvb subtitles are private data */
     case TSMUX_ST_PRIVATE_DATA:
-      if (stream->is_dvb_sub) {
+      if (stream->is_dvb_teletext) {
+        // TODO: add language detection
+        descriptor =
+            gst_mpegts_descriptor_from_custom (GST_MTS_DESC_DVB_TELETEXT, 0, 1);
+
+        g_ptr_array_add (pmt_stream->descriptors, descriptor);
+        break;
+      } else if (stream->is_dvb_sub) {
         GST_DEBUG ("Stream language %s", stream->language);
         /* Simple DVB subtitles with no monitor aspect ratio critical
            FIXME, how do we make it settable? */
