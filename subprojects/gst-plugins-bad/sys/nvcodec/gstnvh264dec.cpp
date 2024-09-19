@@ -292,10 +292,18 @@ gst_nv_h264_dec_class_init (GstNvH264DecClass * klass,
   element_class->set_context = GST_DEBUG_FUNCPTR (gst_nv_h264_dec_set_context);
 
   parent_class = (GTypeClass *) g_type_class_peek_parent (klass);
-  gst_element_class_set_static_metadata (element_class,
-      "NVDEC H.264 Decoder",
+
+  gchar *long_name;
+  if (cdata->cuda_device_id) {
+    long_name = g_strdup_printf ("NVDEC H.264 Decoder with device %d",
+        cdata->cuda_device_id);    
+  } else {
+    long_name = g_strdup ("NVDEC H.264 Decoder");
+  }
+  gst_element_class_set_static_metadata (element_class, long_name,
       "Codec/Decoder/Video/Hardware",
       "NVIDIA H.264 video decoder", "Seungha Yang <seungha@centricular.com>");
+  g_free (long_name);
 
   gst_element_class_add_pad_template (element_class,
       gst_pad_template_new ("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
