@@ -107,7 +107,7 @@ enum
 /* Internals */
 
 static void
-gst_base_ts_mux_pad_reset (GstBaseTsMuxPad * pad)
+gst_base_ts_mux_pad_reset (GstBaseTsMuxPad *pad)
 {
   pad->dts = GST_CLOCK_STIME_NONE;
   pad->prog_id = -1;
@@ -137,7 +137,7 @@ gst_base_ts_mux_pad_reset (GstBaseTsMuxPad * pad)
 /* GstAggregatorPad implementation */
 
 static GstFlowReturn
-gst_base_ts_mux_pad_flush (GstAggregatorPad * agg_pad, GstAggregator * agg)
+gst_base_ts_mux_pad_flush (GstAggregatorPad *agg_pad, GstAggregator *agg)
 {
   GList *cur;
   GstBaseTsMux *mux = GST_BASE_TS_MUX (agg);
@@ -165,7 +165,7 @@ gst_base_ts_mux_pad_flush (GstAggregatorPad * agg_pad, GstAggregator * agg)
 /* GObject implementation */
 
 static void
-gst_base_ts_mux_pad_dispose (GObject * obj)
+gst_base_ts_mux_pad_dispose (GObject *obj)
 {
   GstBaseTsMuxPad *ts_pad = GST_BASE_TS_MUX_PAD (obj);
 
@@ -175,8 +175,8 @@ gst_base_ts_mux_pad_dispose (GObject * obj)
 }
 
 static void
-gst_base_ts_mux_pad_set_property (GObject * object, guint prop_id,
-    const GValue * value, GParamSpec * pspec)
+gst_base_ts_mux_pad_set_property (GObject *object, guint prop_id,
+    const GValue *value, GParamSpec *pspec)
 {
   GstBaseTsMuxPad *ts_pad = GST_BASE_TS_MUX_PAD (object);
 
@@ -191,8 +191,8 @@ gst_base_ts_mux_pad_set_property (GObject * object, guint prop_id,
 }
 
 static void
-gst_base_ts_mux_pad_get_property (GObject * object, guint prop_id,
-    GValue * value, GParamSpec * pspec)
+gst_base_ts_mux_pad_get_property (GObject *object, guint prop_id,
+    GValue *value, GParamSpec *pspec)
 {
   GstBaseTsMuxPad *ts_pad = GST_BASE_TS_MUX_PAD (object);
 
@@ -207,7 +207,7 @@ gst_base_ts_mux_pad_get_property (GObject * object, guint prop_id,
 }
 
 static void
-gst_base_ts_mux_pad_class_init (GstBaseTsMuxPadClass * klass)
+gst_base_ts_mux_pad_class_init (GstBaseTsMuxPadClass *klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstAggregatorPadClass *gstaggpad_class = GST_AGGREGATOR_PAD_CLASS (klass);
@@ -240,7 +240,7 @@ gst_base_ts_mux_pad_class_init (GstBaseTsMuxPadClass * klass)
 }
 
 static void
-gst_base_ts_mux_pad_init (GstBaseTsMuxPad * vaggpad)
+gst_base_ts_mux_pad_init (GstBaseTsMuxPad *vaggpad)
 {
 }
 
@@ -250,6 +250,7 @@ enum
 {
   PROP_0,
   PROP_PROG_MAP,
+  PROP_TS_MODIFICATIONS,
   PROP_PAT_INTERVAL,
   PROP_PMT_INTERVAL,
   PROP_ALIGNMENT,
@@ -302,7 +303,7 @@ G_DEFINE_TYPE_WITH_CODE (GstBaseTsMux, gst_base_ts_mux, GST_TYPE_AGGREGATOR,
 
 /* Takes over the ref on the buffer */
 static StreamData *
-stream_data_new (GstBuffer * buffer)
+stream_data_new (GstBuffer *buffer)
 {
   StreamData *res = g_new (StreamData, 1);
   res->buffer = buffer;
@@ -312,7 +313,7 @@ stream_data_new (GstBuffer * buffer)
 }
 
 static void
-stream_data_free (StreamData * data)
+stream_data_free (StreamData *data)
 {
   if (data) {
     gst_buffer_unmap (data->buffer, &data->map_info);
@@ -324,7 +325,7 @@ stream_data_free (StreamData * data)
 #define parent_class gst_base_ts_mux_parent_class
 
 static void
-gst_base_ts_mux_set_header_on_caps (GstBaseTsMux * mux)
+gst_base_ts_mux_set_header_on_caps (GstBaseTsMux *mux)
 {
   GstBuffer *buf;
   GstStructure *structure;
@@ -359,8 +360,7 @@ gst_base_ts_mux_set_header_on_caps (GstBaseTsMux * mux)
 }
 
 static gboolean
-steal_si_section (GstMpegtsSectionType * type, TsMuxSection * section,
-    TsMux * mux)
+steal_si_section (GstMpegtsSectionType *type, TsMuxSection *section, TsMux *mux)
 {
   g_hash_table_insert (mux->si_sections, type, section);
 
@@ -369,7 +369,7 @@ steal_si_section (GstMpegtsSectionType * type, TsMuxSection * section,
 
 /* Must be called with mux->lock held */
 static void
-gst_base_ts_mux_reset (GstBaseTsMux * mux, gboolean alloc)
+gst_base_ts_mux_reset (GstBaseTsMux *mux, gboolean alloc)
 {
   GstBuffer *buf;
   GstBaseTsMuxClass *klass = GST_BASE_TS_MUX_GET_CLASS (mux);
@@ -438,15 +438,15 @@ gst_base_ts_mux_reset (GstBaseTsMux * mux, gboolean alloc)
 }
 
 static void
-release_buffer_cb (guint8 * data, void *user_data)
+release_buffer_cb (guint8 *data, void *user_data)
 {
   stream_data_free ((StreamData *) user_data);
 }
 
 /* Must be called with mux->lock held */
 static GstFlowReturn
-gst_base_ts_mux_create_or_update_stream (GstBaseTsMux * mux,
-    GstBaseTsMuxPad * ts_pad, GstCaps * caps)
+gst_base_ts_mux_create_or_update_stream (GstBaseTsMux *mux,
+    GstBaseTsMuxPad *ts_pad, GstCaps *caps)
 {
   GstStructure *s;
   guint st = TSMUX_ST_RESERVED;
@@ -857,16 +857,70 @@ is_valid_pmt_pid (guint16 pmt_pid)
   return TRUE;
 }
 
+static void
+modify_dvb_subtitling_pmt_values (GstBaseTsMuxPad *ts_pad,
+    GstStructure *ts_modifications)
+{
+  const gchar *pad_name = GST_PAD_NAME (GST_PAD_CAST (ts_pad));
+  if (gst_structure_has_field (ts_modifications, pad_name)) {
+    const GValue *list = gst_structure_get_value (ts_modifications, pad_name);
+    if (list != NULL) {
+      for (guint i = 0; i < gst_value_list_get_size (list); ++i) {
+        const GValue *value = gst_value_list_get_value (list, i);
+        const GstStructure *mod_struct = gst_value_get_structure (value);
+
+        if (mod_struct == NULL ||
+            !gst_structure_has_name (mod_struct, "dvb_subtitling")) {
+          continue;
+        }
+
+        if (gst_structure_has_field (mod_struct, "subtitling_type")) {
+          guint subtitling_type;
+          gboolean ret = gst_structure_get_uint (mod_struct, "subtitling_type",
+              &subtitling_type);
+          if (ret) {
+            ts_pad->stream->subtitling_type = (guint16) subtitling_type;
+          }
+        }
+
+        if (gst_structure_has_field (mod_struct, "composition_page_id")) {
+          guint composition_page_id;
+          gboolean ret =
+              gst_structure_get_uint (mod_struct, "composition_page_id",
+              &composition_page_id);
+          if (ret) {
+            ts_pad->stream->composition_page_id = (guint16) composition_page_id;
+          }
+        }
+
+        if (gst_structure_has_field (mod_struct, "ancillary_page_id")) {
+          guint ancillary_page_id;
+          gboolean ret =
+              gst_structure_get_uint (mod_struct, "ancillary_page_id",
+              &ancillary_page_id);
+          if (ret) {
+            ts_pad->stream->ancillary_page_id = (guint16) ancillary_page_id;
+          }
+        }
+      }
+    }
+  }
+}
+
 /* Must be called with mux->lock held */
 static GstFlowReturn
-gst_base_ts_mux_create_stream (GstBaseTsMux * mux, GstBaseTsMuxPad * ts_pad,
-    GstCaps * caps)
+gst_base_ts_mux_create_stream (GstBaseTsMux *mux, GstBaseTsMuxPad *ts_pad,
+    GstCaps *caps)
 {
   GstFlowReturn ret;
 
   ret = gst_base_ts_mux_create_or_update_stream (mux, ts_pad, caps);
 
   if (ret == GST_FLOW_OK) {
+    if (mux->ts_modifications != NULL) {
+      modify_dvb_subtitling_pmt_values (ts_pad, mux->ts_modifications);
+    }
+
     tsmux_program_add_stream (ts_pad->prog, ts_pad->stream);
   }
 
@@ -874,7 +928,7 @@ gst_base_ts_mux_create_stream (GstBaseTsMux * mux, GstBaseTsMuxPad * ts_pad,
 }
 
 static guint16
-get_pmt_pcr_pid (GstBaseTsMux * mux, const gchar * prop_name)
+get_pmt_pcr_pid (GstBaseTsMux *mux, const gchar *prop_name)
 {
   if (mux->prog_map == NULL)
     return 0;
@@ -887,7 +941,7 @@ get_pmt_pcr_pid (GstBaseTsMux * mux, const gchar * prop_name)
 }
 
 static gchar *
-get_pmt_pcr_sink (GstBaseTsMux * mux, const gchar * prop_name)
+get_pmt_pcr_sink (GstBaseTsMux *mux, const gchar *prop_name)
 {
   if (mux->prog_map == NULL)
     return 0;
@@ -901,7 +955,7 @@ get_pmt_pcr_sink (GstBaseTsMux * mux, const gchar * prop_name)
 
 /* Must be called with mux->lock held */
 static GstFlowReturn
-gst_base_ts_mux_create_pad_stream (GstBaseTsMux * mux, GstPad * pad,
+gst_base_ts_mux_create_pad_stream (GstBaseTsMux *mux, GstPad *pad,
     gboolean allow_no_caps)
 {
   GstBaseTsMuxPad *ts_pad = GST_BASE_TS_MUX_PAD (pad);
@@ -1032,7 +1086,7 @@ no_stream:
 
 /* Must be called with mux->lock held */
 static gboolean
-gst_base_ts_mux_create_pad_stream_func (GstElement * element, GstPad * pad,
+gst_base_ts_mux_create_pad_stream_func (GstElement *element, GstPad *pad,
     gpointer user_data)
 {
   GstFlowReturn *ret = user_data;
@@ -1045,7 +1099,7 @@ gst_base_ts_mux_create_pad_stream_func (GstElement * element, GstPad * pad,
 
 /* Must be called with mux->lock held */
 static GstFlowReturn
-gst_base_ts_mux_create_streams (GstBaseTsMux * mux)
+gst_base_ts_mux_create_streams (GstBaseTsMux *mux)
 {
   GstFlowReturn ret = GST_FLOW_OK;
 
@@ -1056,7 +1110,7 @@ gst_base_ts_mux_create_streams (GstBaseTsMux * mux)
 }
 
 static void
-new_packet_common_init (GstBaseTsMux * mux, GstBuffer * buf, guint8 * data,
+new_packet_common_init (GstBaseTsMux *mux, GstBuffer *buf, guint8 *data,
     guint len)
 {
   /* Packets should be at least 188 bytes, but check anyway */
@@ -1100,7 +1154,7 @@ new_packet_common_init (GstBaseTsMux * mux, GstBuffer * buf, guint8 * data,
 }
 
 static GstFlowReturn
-gst_base_ts_mux_push_packets (GstBaseTsMux * mux, gboolean force)
+gst_base_ts_mux_push_packets (GstBaseTsMux *mux, gboolean force)
 {
   GstSegment *segment =
       &GST_AGGREGATOR_PAD (GST_AGGREGATOR_SRC_PAD (mux))->segment;
@@ -1220,7 +1274,7 @@ gst_base_ts_mux_push_packets (GstBaseTsMux * mux, gboolean force)
 }
 
 static GstFlowReturn
-gst_base_ts_mux_collect_packet (GstBaseTsMux * mux, GstBuffer * buf)
+gst_base_ts_mux_collect_packet (GstBaseTsMux *mux, GstBuffer *buf)
 {
   GST_LOG_OBJECT (mux, "collecting packet size %" G_GSIZE_FORMAT,
       gst_buffer_get_size (buf));
@@ -1230,7 +1284,7 @@ gst_base_ts_mux_collect_packet (GstBaseTsMux * mux, GstBuffer * buf)
 }
 
 static GstEvent *
-check_pending_key_unit_event (GstEvent * pending_event, GstSegment * segment,
+check_pending_key_unit_event (GstEvent *pending_event, GstSegment *segment,
     GstClockTime timestamp, guint flags, GstClockTime pending_key_unit_ts)
 {
   GstClockTime running_time, stream_time;
@@ -1283,7 +1337,7 @@ out:
 /* Called when the TsMux has prepared a packet for output. Return FALSE
  * on error */
 static gboolean
-new_packet_cb (GstBuffer * buf, void *user_data, gint64 new_pcr)
+new_packet_cb (GstBuffer *buf, void *user_data, gint64 new_pcr)
 {
   GstBaseTsMux *mux = (GstBaseTsMux *) user_data;
   GstAggregator *agg = GST_AGGREGATOR (mux);
@@ -1335,7 +1389,7 @@ new_packet_cb (GstBuffer * buf, void *user_data, gint64 new_pcr)
 
 /* called when TsMux needs new packet to write into */
 static void
-alloc_packet_cb (GstBuffer ** buf, void *user_data)
+alloc_packet_cb (GstBuffer **buf, void *user_data)
 {
   GstBaseTsMux *mux = (GstBaseTsMux *) user_data;
   GstBaseTsMuxClass *klass = GST_BASE_TS_MUX_GET_CLASS (mux);
@@ -1346,8 +1400,8 @@ alloc_packet_cb (GstBuffer ** buf, void *user_data)
 }
 
 static GstFlowReturn
-gst_base_ts_mux_aggregate_buffer (GstBaseTsMux * mux,
-    GstAggregatorPad * agg_pad, GstBuffer * buf)
+gst_base_ts_mux_aggregate_buffer (GstBaseTsMux *mux,
+    GstAggregatorPad *agg_pad, GstBuffer *buf)
 {
   GstFlowReturn ret = GST_FLOW_OK;
   GstBaseTsMuxPad *best = GST_BASE_TS_MUX_PAD (agg_pad);
@@ -1549,7 +1603,7 @@ write_fail:
 
 /* GstElement implementation */
 static gboolean
-gst_base_ts_mux_has_pad_with_pid (GstBaseTsMux * mux, guint16 pid)
+gst_base_ts_mux_has_pad_with_pid (GstBaseTsMux *mux, guint16 pid)
 {
   GList *l;
   gboolean res = FALSE;
@@ -1570,8 +1624,8 @@ gst_base_ts_mux_has_pad_with_pid (GstBaseTsMux * mux, guint16 pid)
 }
 
 static GstPad *
-gst_base_ts_mux_request_new_pad (GstElement * element, GstPadTemplate * templ,
-    const gchar * name, const GstCaps * caps)
+gst_base_ts_mux_request_new_pad (GstElement *element, GstPadTemplate *templ,
+    const gchar *name, const GstCaps *caps)
 {
   GstBaseTsMux *mux = GST_BASE_TS_MUX (element);
   gint pid = -1;
@@ -1626,7 +1680,7 @@ invalid_stream_pid:
 }
 
 static void
-gst_base_ts_mux_release_pad (GstElement * element, GstPad * pad)
+gst_base_ts_mux_release_pad (GstElement *element, GstPad *pad)
 {
   GstBaseTsMux *mux = GST_BASE_TS_MUX (element);
 
@@ -1663,7 +1717,7 @@ gst_base_ts_mux_release_pad (GstElement * element, GstPad * pad)
 /* GstAggregator implementation */
 
 static void
-request_keyframe (GstBaseTsMux * mux, GstClockTime running_time)
+request_keyframe (GstBaseTsMux *mux, GstClockTime running_time)
 {
   GList *l;
   GST_OBJECT_LOCK (mux);
@@ -1723,7 +1777,7 @@ static const guint32 crc_tab[256] = {
 };
 
 static guint32
-_calc_crc32 (const guint8 * data, guint datalen)
+_calc_crc32 (const guint8 *data, guint datalen)
 {
   gint i;
   guint32 crc = 0xffffffff;
@@ -1737,13 +1791,13 @@ _calc_crc32 (const guint8 * data, guint datalen)
 #define MPEGTIME_TO_GSTTIME(t) ((t) * (guint64)100000 / 9)
 
 static GstMpegtsSCTESpliceEvent *
-copy_splice (GstMpegtsSCTESpliceEvent * splice)
+copy_splice (GstMpegtsSCTESpliceEvent *splice)
 {
   return g_boxed_copy (GST_TYPE_MPEGTS_SCTE_SPLICE_EVENT, splice);
 }
 
 static void
-free_splice (GstMpegtsSCTESpliceEvent * splice)
+free_splice (GstMpegtsSCTESpliceEvent *splice)
 {
   g_boxed_free (GST_TYPE_MPEGTS_SCTE_SPLICE_EVENT, splice);
 }
@@ -1751,7 +1805,7 @@ free_splice (GstMpegtsSCTESpliceEvent * splice)
 /* FIXME: get rid of this when depending on glib >= 2.62 */
 
 static GPtrArray *
-_g_ptr_array_copy (GPtrArray * array,
+_g_ptr_array_copy (GPtrArray *array,
     GCopyFunc func, GFreeFunc free_func, gpointer user_data)
 {
   GPtrArray *new_array;
@@ -1778,7 +1832,7 @@ _g_ptr_array_copy (GPtrArray * array,
 }
 
 static GstMpegtsSCTESIT *
-deep_copy_sit (const GstMpegtsSCTESIT * sit)
+deep_copy_sit (const GstMpegtsSCTESIT *sit)
 {
   GstMpegtsSCTESIT *sit_copy = g_boxed_copy (GST_TYPE_MPEGTS_SCTE_SIT, sit);
   GPtrArray *splices_copy =
@@ -1826,9 +1880,8 @@ deep_copy_sit (const GstMpegtsSCTESIT * sit)
  * to the application to ensure that that is the case.
  */
 static void
-handle_scte35_section (GstBaseTsMux * mux, GstEvent * event,
-    GstMpegtsSection * section, guint64 mpeg_pts_offset,
-    GstStructure * rtime_map)
+handle_scte35_section (GstBaseTsMux *mux, GstEvent *event,
+    GstMpegtsSection *section, guint64 mpeg_pts_offset, GstStructure *rtime_map)
 {
   GstMpegtsSCTESIT *sit;
   guint i;
@@ -2061,7 +2114,7 @@ handle_scte35_section (GstBaseTsMux * mux, GstEvent * event,
 }
 
 static gboolean
-gst_base_ts_mux_send_event (GstElement * element, GstEvent * event)
+gst_base_ts_mux_send_event (GstElement *element, GstEvent *event)
 {
   GstMpegtsSection *section;
   GstBaseTsMux *mux = GST_BASE_TS_MUX (element);
@@ -2090,7 +2143,7 @@ gst_base_ts_mux_send_event (GstElement * element, GstEvent * event)
 
 /* Must be called with mux->lock held */
 static void
-gst_base_ts_mux_resend_all_pmts (GstBaseTsMux * mux)
+gst_base_ts_mux_resend_all_pmts (GstBaseTsMux *mux)
 {
   GList *cur;
 
@@ -2106,8 +2159,8 @@ gst_base_ts_mux_resend_all_pmts (GstBaseTsMux * mux)
 /* GstAggregator implementation */
 
 static gboolean
-gst_base_ts_mux_sink_event (GstAggregator * agg, GstAggregatorPad * agg_pad,
-    GstEvent * event)
+gst_base_ts_mux_sink_event (GstAggregator *agg, GstAggregatorPad *agg_pad,
+    GstEvent *event)
 {
   GstAggregatorClass *agg_class = GST_AGGREGATOR_CLASS (parent_class);
   GstBaseTsMux *mux = GST_BASE_TS_MUX (agg);
@@ -2302,7 +2355,7 @@ out:
 }
 
 static gboolean
-gst_base_ts_mux_src_event (GstAggregator * agg, GstEvent * event)
+gst_base_ts_mux_src_event (GstAggregator *agg, GstEvent *event)
 {
   GstAggregatorClass *agg_class = GST_AGGREGATOR_CLASS (parent_class);
   GstBaseTsMux *mux = GST_BASE_TS_MUX (agg);
@@ -2380,8 +2433,8 @@ gst_base_ts_mux_src_event (GstAggregator * agg, GstEvent * event)
 }
 
 static GstBuffer *
-gst_base_ts_mux_clip (GstAggregator * agg,
-    GstAggregatorPad * agg_pad, GstBuffer * buf)
+gst_base_ts_mux_clip (GstAggregator *agg,
+    GstAggregatorPad *agg_pad, GstBuffer *buf)
 {
   GstBaseTsMuxPad *pad = GST_BASE_TS_MUX_PAD (agg_pad);
   GstClockTime time;
@@ -2452,7 +2505,7 @@ beach:
 }
 
 static GstBaseTsMuxPad *
-gst_base_ts_mux_find_best_pad (GstAggregator * aggregator, gboolean timeout)
+gst_base_ts_mux_find_best_pad (GstAggregator *aggregator, gboolean timeout)
 {
   GstBaseTsMuxPad *best = NULL;
   GstClockTime best_ts = GST_CLOCK_TIME_NONE;
@@ -2500,7 +2553,7 @@ gst_base_ts_mux_find_best_pad (GstAggregator * aggregator, gboolean timeout)
 }
 
 static gboolean
-gst_base_ts_mux_are_all_pads_eos (GstBaseTsMux * mux)
+gst_base_ts_mux_are_all_pads_eos (GstBaseTsMux *mux)
 {
   GList *l;
   gboolean ret = TRUE;
@@ -2523,7 +2576,7 @@ gst_base_ts_mux_are_all_pads_eos (GstBaseTsMux * mux)
 
 
 static GstFlowReturn
-gst_base_ts_mux_aggregate (GstAggregator * agg, gboolean timeout)
+gst_base_ts_mux_aggregate (GstAggregator *agg, gboolean timeout)
 {
   GstBaseTsMux *mux = GST_BASE_TS_MUX (agg);
   GstFlowReturn ret = GST_FLOW_OK;
@@ -2578,7 +2631,7 @@ done:
 }
 
 static gboolean
-gst_base_ts_mux_start (GstAggregator * agg)
+gst_base_ts_mux_start (GstAggregator *agg)
 {
   GstBaseTsMux *mux = GST_BASE_TS_MUX (agg);
 
@@ -2590,7 +2643,7 @@ gst_base_ts_mux_start (GstAggregator * agg)
 }
 
 static gboolean
-gst_base_ts_mux_stop (GstAggregator * agg)
+gst_base_ts_mux_stop (GstAggregator *agg)
 {
   GstBaseTsMux *mux = GST_BASE_TS_MUX (agg);
 
@@ -2604,7 +2657,7 @@ gst_base_ts_mux_stop (GstAggregator * agg)
 /* GObject implementation */
 
 static void
-gst_base_ts_mux_dispose (GObject * object)
+gst_base_ts_mux_dispose (GObject *object)
 {
   GstBaseTsMux *mux = GST_BASE_TS_MUX (object);
 
@@ -2619,6 +2672,10 @@ gst_base_ts_mux_dispose (GObject * object)
     gst_structure_free (mux->prog_map);
     mux->prog_map = NULL;
   }
+  if (mux->ts_modifications) {
+    gst_structure_free (mux->ts_modifications);
+    mux->ts_modifications = NULL;
+  }
   if (mux->programs) {
     g_hash_table_destroy (mux->programs);
     mux->programs = NULL;
@@ -2628,7 +2685,7 @@ gst_base_ts_mux_dispose (GObject * object)
 }
 
 static void
-gst_base_ts_mux_finalize (GObject * object)
+gst_base_ts_mux_finalize (GObject *object)
 {
   GstBaseTsMux *mux = GST_BASE_TS_MUX (object);
 
@@ -2637,7 +2694,7 @@ gst_base_ts_mux_finalize (GObject * object)
 }
 
 static void
-gst_base_ts_mux_constructed (GObject * object)
+gst_base_ts_mux_constructed (GObject *object)
 {
   GstBaseTsMux *mux = GST_BASE_TS_MUX (object);
 
@@ -2648,8 +2705,8 @@ gst_base_ts_mux_constructed (GObject * object)
 }
 
 static void
-gst_base_ts_mux_set_property (GObject * object, guint prop_id,
-    const GValue * value, GParamSpec * pspec)
+gst_base_ts_mux_set_property (GObject *object, guint prop_id,
+    const GValue *value, GParamSpec *pspec)
 {
   GstBaseTsMux *mux = GST_BASE_TS_MUX (object);
   GList *l;
@@ -2665,6 +2722,17 @@ gst_base_ts_mux_set_property (GObject * object, guint prop_id,
         mux->prog_map = gst_structure_copy (s);
       else
         mux->prog_map = NULL;
+      break;
+    }
+    case PROP_TS_MODIFICATIONS:{
+      const GstStructure *s = gst_value_get_structure (value);
+      if (mux->ts_modifications) {
+        gst_structure_free (mux->ts_modifications);
+      }
+      if (s)
+        mux->ts_modifications = gst_structure_copy (s);
+      else
+        mux->ts_modifications = NULL;
       break;
     }
     case PROP_PAT_INTERVAL:
@@ -2726,14 +2794,17 @@ gst_base_ts_mux_set_property (GObject * object, guint prop_id,
 }
 
 static void
-gst_base_ts_mux_get_property (GObject * object, guint prop_id,
-    GValue * value, GParamSpec * pspec)
+gst_base_ts_mux_get_property (GObject *object, guint prop_id,
+    GValue *value, GParamSpec *pspec)
 {
   GstBaseTsMux *mux = GST_BASE_TS_MUX (object);
 
   switch (prop_id) {
     case PROP_PROG_MAP:
       gst_value_set_structure (value, mux->prog_map);
+      break;
+    case PROP_TS_MODIFICATIONS:
+      gst_value_set_structure (value, mux->ts_modifications);
       break;
     case PROP_PAT_INTERVAL:
       g_value_set_uint (value, mux->pat_interval);
@@ -2771,7 +2842,7 @@ gst_base_ts_mux_get_property (GObject * object, guint prop_id,
 /* Default vmethods implementation */
 
 static TsMux *
-gst_base_ts_mux_default_create_ts_mux (GstBaseTsMux * mux)
+gst_base_ts_mux_default_create_ts_mux (GstBaseTsMux *mux)
 {
   TsMux *tsmux = tsmux_new ();
   tsmux_set_write_func (tsmux, new_packet_cb, mux);
@@ -2786,8 +2857,7 @@ gst_base_ts_mux_default_create_ts_mux (GstBaseTsMux * mux)
 }
 
 static void
-gst_base_ts_mux_default_allocate_packet (GstBaseTsMux * mux,
-    GstBuffer ** buffer)
+gst_base_ts_mux_default_allocate_packet (GstBaseTsMux *mux, GstBuffer **buffer)
 {
   GstBuffer *buf;
 
@@ -2797,7 +2867,7 @@ gst_base_ts_mux_default_allocate_packet (GstBaseTsMux * mux,
 }
 
 static gboolean
-gst_base_ts_mux_default_output_packet (GstBaseTsMux * mux, GstBuffer * buffer,
+gst_base_ts_mux_default_output_packet (GstBaseTsMux *mux, GstBuffer *buffer,
     gint64 new_pcr)
 {
   gst_base_ts_mux_collect_packet (mux, buffer);
@@ -2808,19 +2878,19 @@ gst_base_ts_mux_default_output_packet (GstBaseTsMux * mux, GstBuffer * buffer,
 /* Subclass API */
 
 void
-gst_base_ts_mux_set_packet_size (GstBaseTsMux * mux, gsize size)
+gst_base_ts_mux_set_packet_size (GstBaseTsMux *mux, gsize size)
 {
   mux->packet_size = size;
 }
 
 void
-gst_base_ts_mux_set_automatic_alignment (GstBaseTsMux * mux, gsize alignment)
+gst_base_ts_mux_set_automatic_alignment (GstBaseTsMux *mux, gsize alignment)
 {
   mux->automatic_alignment = alignment;
 }
 
 static void
-gst_base_ts_mux_class_init (GstBaseTsMuxClass * klass)
+gst_base_ts_mux_class_init (GstBaseTsMuxClass *klass)
 {
   GstElementClass *gstelement_class = GST_ELEMENT_CLASS (klass);
   GstAggregatorClass *gstagg_class = GST_AGGREGATOR_CLASS (klass);
@@ -2862,6 +2932,13 @@ gst_base_ts_mux_class_init (GstBaseTsMuxClass * klass)
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_PROG_MAP,
       g_param_spec_boxed ("prog-map", "Program map",
           "A GstStructure specifies the mapping from elementary streams to programs",
+          GST_TYPE_STRUCTURE,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_TS_MODIFICATIONS, g_param_spec_boxed ("ts-modifications",
+          "PSI packets modification map",
+          "A GstStructure specifies which values in PSI packets to replace",
           GST_TYPE_STRUCTURE,
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
@@ -2931,7 +3008,7 @@ gst_base_ts_mux_class_init (GstBaseTsMuxClass * klass)
 }
 
 static void
-gst_base_ts_mux_init (GstBaseTsMux * mux)
+gst_base_ts_mux_init (GstBaseTsMux *mux)
 {
   mux->out_adapter = gst_adapter_new ();
 
@@ -2941,6 +3018,7 @@ gst_base_ts_mux_init (GstBaseTsMux * mux)
   mux->si_interval = TSMUX_DEFAULT_SI_INTERVAL;
   mux->pcr_interval = TSMUX_DEFAULT_PCR_INTERVAL;
   mux->prog_map = NULL;
+  mux->ts_modifications = NULL;
   mux->alignment = BASETSMUX_DEFAULT_ALIGNMENT;
   mux->bitrate = TSMUX_DEFAULT_BITRATE;
   mux->scte35_pid = DEFAULT_SCTE_35_PID;
