@@ -251,6 +251,7 @@ enum
 {
   PROP_0,
   PROP_PROG_MAP,
+  PROP_TS_MODIFICATIONS,
   PROP_PAT_INTERVAL,
   PROP_PMT_INTERVAL,
   PROP_ALIGNMENT,
@@ -1056,6 +1057,56 @@ is_valid_pmt_pid (guint16 pmt_pid)
   return TRUE;
 }
 
+static void
+modify_dvb_subtitling_pmt_values (GstBaseTsMuxPad * ts_pad,
+    GstStructure * ts_modifications)
+{
+  const gchar *pad_name = GST_PAD_NAME (GST_PAD_CAST (ts_pad));
+  if (gst_structure_has_field (ts_modifications, pad_name)) {
+    const GValue *list = gst_structure_get_value (ts_modifications, pad_name);
+    if (list != NULL) {
+      for (guint i = 0; i < gst_value_list_get_size (list); ++i) {
+        const GValue *value = gst_value_list_get_value (list, i);
+        const GstStructure *mod_struct = gst_value_get_structure (value);
+
+        if (mod_struct == NULL ||
+            !gst_structure_has_name (mod_struct, "dvb_subtitling")) {
+          continue;
+        }
+
+        if (gst_structure_has_field (mod_struct, "subtitling_type")) {
+          guint subtitling_type;
+          gboolean ret = gst_structure_get_uint (mod_struct, "subtitling_type",
+              &subtitling_type);
+          if (ret) {
+            ts_pad->stream->subtitling_type = (guint16) subtitling_type;
+          }
+        }
+
+        if (gst_structure_has_field (mod_struct, "composition_page_id")) {
+          guint composition_page_id;
+          gboolean ret =
+              gst_structure_get_uint (mod_struct, "composition_page_id",
+              &composition_page_id);
+          if (ret) {
+            ts_pad->stream->composition_page_id = (guint16) composition_page_id;
+          }
+        }
+
+        if (gst_structure_has_field (mod_struct, "ancillary_page_id")) {
+          guint ancillary_page_id;
+          gboolean ret =
+              gst_structure_get_uint (mod_struct, "ancillary_page_id",
+              &ancillary_page_id);
+          if (ret) {
+            ts_pad->stream->ancillary_page_id = (guint16) ancillary_page_id;
+          }
+        }
+      }
+    }
+  }
+}
+
 /* Must be called with mux->lock held */
 static GstFlowReturn
 gst_base_ts_mux_create_stream (GstBaseTsMux * mux, GstBaseTsMuxPad * ts_pad,
@@ -1066,6 +1117,10 @@ gst_base_ts_mux_create_stream (GstBaseTsMux * mux, GstBaseTsMuxPad * ts_pad,
   ret = gst_base_ts_mux_create_or_update_stream (mux, ts_pad, caps);
 
   if (ret == GST_FLOW_OK) {
+    if (mux->ts_modifications != NULL) {
+      modify_dvb_subtitling_pmt_values (ts_pad, mux->ts_modifications);
+    }
+
     tsmux_program_add_stream (ts_pad->prog, ts_pad->stream);
   }
 
@@ -2847,6 +2902,10 @@ gst_base_ts_mux_dispose (GObject * object)
     gst_structure_free (mux->prog_map);
     mux->prog_map = NULL;
   }
+  if (mux->ts_modifications) {
+    gst_structure_free (mux->ts_modifications);
+    mux->ts_modifications = NULL;
+  }
   if (mux->programs) {
     g_hash_table_destroy (mux->programs);
     mux->programs = NULL;
@@ -2895,6 +2954,17 @@ gst_base_ts_mux_set_property (GObject * object, guint prop_id,
         mux->prog_map = gst_structure_copy (s);
       else
         mux->prog_map = NULL;
+      break;
+    }
+    case PROP_TS_MODIFICATIONS:{
+      const GstStructure *s = gst_value_get_structure (value);
+      if (mux->ts_modifications) {
+        gst_structure_free (mux->ts_modifications);
+      }
+      if (s)
+        mux->ts_modifications = gst_structure_copy (s);
+      else
+        mux->ts_modifications = NULL;
       break;
     }
     case PROP_PAT_INTERVAL:
@@ -2967,6 +3037,9 @@ gst_base_ts_mux_get_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case PROP_PROG_MAP:
       gst_value_set_structure (value, mux->prog_map);
+      break;
+    case PROP_TS_MODIFICATIONS:
+      gst_value_set_structure (value, mux->ts_modifications);
       break;
     case PROP_PAT_INTERVAL:
       g_value_set_uint (value, mux->pat_interval);
@@ -3101,6 +3174,13 @@ gst_base_ts_mux_class_init (GstBaseTsMuxClass * klass)
           GST_TYPE_STRUCTURE,
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_TS_MODIFICATIONS, g_param_spec_boxed ("ts-modifications",
+          "PSI packets modification map",
+          "A GstStructure specifies which values in PSI packets to replace",
+          GST_TYPE_STRUCTURE,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_PAT_INTERVAL,
       g_param_spec_uint ("pat-interval", "PAT interval",
           "Set the interval (in ticks of the 90kHz clock) for writing out the PAT table",
@@ -3191,6 +3271,7 @@ gst_base_ts_mux_init (GstBaseTsMux * mux)
   mux->si_interval = TSMUX_DEFAULT_SI_INTERVAL;
   mux->pcr_interval = TSMUX_DEFAULT_PCR_INTERVAL;
   mux->prog_map = NULL;
+  mux->ts_modifications = NULL;
   mux->alignment = BASETSMUX_DEFAULT_ALIGNMENT;
   mux->bitrate = TSMUX_DEFAULT_BITRATE;
   mux->scte35_pid = DEFAULT_SCTE_35_PID;

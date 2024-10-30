@@ -238,6 +238,11 @@ struct TsMuxStream {
 
   /* PMT descriptor for the stream */
   GstMpegtsDescriptor *pmt_descriptor;
+
+  /* DVB Subtitling */
+  guint8 subtitling_type;
+  guint16 composition_page_id;
+  guint16 ancillary_page_id;
 };
 
 /* stream management */

@@ -155,6 +155,7 @@ struct GstBaseTsMux {
 
   /* properties */
   GstStructure *prog_map;
+  GstStructure *ts_modifications;
   guint pat_interval;
   guint pmt_interval;
   gint alignment;
