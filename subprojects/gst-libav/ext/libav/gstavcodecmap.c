@@ -37,6 +37,8 @@
 #include <gst/audio/gstdsd.h>
 #include <gst/pbutils/codec-utils.h>
 
+const int RIXJOB_GSTAVCODECMAP_C_PATCH_VERSION = 1;
+
 /* IMPORTANT: Keep this sorted by the ffmpeg channel masks */
 static const struct
 {

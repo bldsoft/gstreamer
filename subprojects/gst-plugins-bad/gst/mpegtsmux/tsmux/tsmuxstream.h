@@ -205,6 +205,8 @@ struct TsMuxStream {
   gint audio_channels;
   gint audio_bitrate;
 
+  gboolean is_dvb_teletext;
+
   gboolean is_dvb_sub;
   gchar language[4];
 
@@ -226,6 +228,11 @@ struct TsMuxStream {
   guint16 profile_and_level;
   gboolean interlace_mode;
   guint8 color_spec;
+
+  /* DVB Subtitling */
+  guint8 subtitling_type;
+  guint16 composition_page_id;
+  guint16 ancillary_page_id;
 };
 
 /* stream management */

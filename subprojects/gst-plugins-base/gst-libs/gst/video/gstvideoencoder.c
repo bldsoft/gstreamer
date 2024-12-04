@@ -114,12 +114,14 @@ GST_DEBUG_CATEGORY (videoencoder_debug);
 
 #define DEFAULT_QOS                 FALSE
 #define DEFAULT_MIN_FORCE_KEY_UNIT_INTERVAL 0
+#define DEFAULT_SKIP_CLOSE_FORCE_KEYFRAMES TRUE
 
 enum
 {
   PROP_0,
   PROP_QOS,
   PROP_MIN_FORCE_KEY_UNIT_INTERVAL,
+  PROP_SKIP_CLOSE_FORCE_KEYFRAMES,
   PROP_LAST
 };
 
@@ -147,6 +149,7 @@ struct _GstVideoEncoderPrivate
   GstClockTime min_force_key_unit_interval;
   GstClockTime last_force_key_unit_request;
   GstClockTime last_key_unit;
+  gint skip_close_force_keyframes;
 
   guint32 system_frame_number;
 
@@ -346,6 +349,10 @@ gst_video_encoder_set_property (GObject * object, guint prop_id,
       gst_video_encoder_set_min_force_key_unit_interval (sink,
           g_value_get_uint64 (value));
       break;
+    case PROP_SKIP_CLOSE_FORCE_KEYFRAMES:
+      gst_video_encoder_set_skip_close_force_keyframes (sink,
+          g_value_get_boolean (value));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -365,6 +372,10 @@ gst_video_encoder_get_property (GObject * object, guint prop_id, GValue * value,
     case PROP_MIN_FORCE_KEY_UNIT_INTERVAL:
       g_value_set_uint64 (value,
           gst_video_encoder_get_min_force_key_unit_interval (sink));
+      break;
+    case PROP_SKIP_CLOSE_FORCE_KEYFRAMES:
+      g_value_set_boolean (value,
+          gst_video_encoder_is_skip_close_force_keyframes (sink));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -424,6 +435,14 @@ gst_video_encoder_class_init (GstVideoEncoderClass * klass)
           "Minimum Force Keyunit Interval",
           "Minimum interval between force-keyunit requests in nanoseconds", 0,
           G_MAXUINT64, DEFAULT_MIN_FORCE_KEY_UNIT_INTERVAL,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class,
+      PROP_SKIP_CLOSE_FORCE_KEYFRAMES,
+      g_param_spec_boolean ("skip-close-force-keyframes",
+          "Skip Close Force Keyframes",
+          "Skip close to each other force keyframe events",
+          DEFAULT_SKIP_CLOSE_FORCE_KEYFRAMES,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   meta_tag_video_quark = g_quark_from_static_string (GST_META_TAG_VIDEO_STR);
@@ -596,6 +615,7 @@ gst_video_encoder_init (GstVideoEncoder * encoder, GstVideoEncoderClass * klass)
 
   g_queue_init (&priv->frames);
   g_queue_init (&priv->force_key_unit);
+  priv->skip_close_force_keyframes = DEFAULT_SKIP_CLOSE_FORCE_KEYFRAMES;
 
   priv->min_latency = 0;
   priv->max_latency = 0;
@@ -1614,7 +1634,8 @@ gst_video_encoder_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
 
       /* Skip pending keyunits */
       if (fevt->pending) {
-        if (fevt->running_time == GST_CLOCK_TIME_NONE)
+        if (priv->skip_close_force_keyframes &&
+            fevt->running_time == GST_CLOCK_TIME_NONE)
           have_pending_none_fevt = TRUE;
         continue;
       }
@@ -3212,4 +3233,43 @@ gst_video_encoder_get_min_force_key_unit_interval (GstVideoEncoder * encoder)
   GST_OBJECT_UNLOCK (encoder);
 
   return interval;
+}
+
+/**
+ * gst_video_encoder_set_skip_close_force_keyframes:
+ * @encoder: the encoder
+ * @enabled: the new skip_close_force_keyframes value.
+ *
+ * Configures @encoder to skip close force keyframes events.
+ * Since: 1.22.3
+ */
+void
+gst_video_encoder_set_skip_close_force_keyframes (GstVideoEncoder * encoder,
+    gboolean is_skip)
+{
+  g_return_if_fail (GST_IS_VIDEO_ENCODER (encoder));
+
+  g_atomic_int_set (&encoder->priv->skip_close_force_keyframes, is_skip);
+}
+
+/**
+ * gst_video_encoder_is_skip_close_force_keyframes:
+ * @encoder: the encoder
+ *
+ * Checks if @encoder is currently configured to skip close force keyframes events.
+ *
+ * Returns: %TRUE if the encoder is configured to skip close force keyframes events.
+ * Since: 1.22.3
+ */
+gboolean
+gst_video_encoder_is_skip_close_force_keyframes (GstVideoEncoder * encoder)
+{
+  gboolean res;
+
+  g_return_val_if_fail (GST_IS_VIDEO_ENCODER (encoder),
+      DEFAULT_SKIP_CLOSE_FORCE_KEYFRAMES);
+
+  res = g_atomic_int_get (&encoder->priv->skip_close_force_keyframes);
+
+  return res;
 }
