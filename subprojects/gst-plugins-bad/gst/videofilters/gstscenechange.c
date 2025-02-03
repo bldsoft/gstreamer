@@ -87,6 +87,17 @@
 GST_DEBUG_CATEGORY_STATIC (gst_scene_change_debug_category);
 #define GST_CAT_DEFAULT gst_scene_change_debug_category
 
+/* signals */
+
+
+enum
+{
+  SIGNAL_SCENE_CHANGED,
+  SIGNAL_LAST
+};
+
+static guint signals[SIGNAL_LAST];
+
 /* prototypes */
 
 
@@ -138,6 +149,12 @@ gst_scene_change_class_init (GstSceneChangeClass * klass)
       GST_DEBUG_FUNCPTR (gst_scene_change_transform_frame_ip);
 
   trans_class->stop = GST_DEBUG_FUNCPTR (gst_scenechange_stop);
+
+  signals[SIGNAL_SCENE_CHANGED] =
+      g_signal_new ("scene-changed", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstSceneChangeClass, scene_changed),
+      NULL, NULL, NULL,
+      G_TYPE_NONE, 3, G_TYPE_UINT64, G_TYPE_DOUBLE, G_TYPE_DOUBLE);
 }
 
 static void
@@ -250,12 +267,16 @@ gst_scene_change_transform_frame_ip (GstVideoFilter * filter,
     GST_INFO_OBJECT (scenechange, "%d %g %g %g %d",
         scenechange->n_diffs, score / threshold, score, threshold, change);
 
+    GstClockTime pts = GST_BUFFER_PTS (frame->buffer);
+
     event =
-        gst_video_event_new_downstream_force_key_unit (GST_BUFFER_PTS
-        (frame->buffer), GST_CLOCK_TIME_NONE, GST_CLOCK_TIME_NONE, FALSE,
-        scenechange->count++);
+        gst_video_event_new_downstream_force_key_unit (pts,
+        GST_CLOCK_TIME_NONE, GST_CLOCK_TIME_NONE, FALSE, scenechange->count++);
 
     gst_pad_push_event (GST_BASE_TRANSFORM_SRC_PAD (scenechange), event);
+
+    g_signal_emit (scenechange, signals[SIGNAL_SCENE_CHANGED], 0,
+        pts, score, threshold);
   }
 
   return GST_FLOW_OK;
