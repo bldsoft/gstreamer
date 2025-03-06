@@ -3104,6 +3104,15 @@ gst_mpd_client_get_period_index_at_time (GstMPDClient * client,
 
   for (idx = 0, iter = client->periods; iter; idx++, iter = g_list_next (iter)) {
     stream_period = iter->data;
+    if (idx == 0 && stream_period->start > time_offset) {
+      GST_LOG_OBJECT (client,
+          "Target time offset %" GST_STIMEP_FORMAT
+          " is before the first period with start %" GST_TIMEP_FORMAT
+          ". Starting there", &time_offset, &stream_period->start);
+      period_idx = idx;
+      break;
+    }
+
     if (stream_period->start <= time_offset
         && (!GST_CLOCK_TIME_IS_VALID (stream_period->duration)
             || stream_period->start + stream_period->duration > time_offset)) {
