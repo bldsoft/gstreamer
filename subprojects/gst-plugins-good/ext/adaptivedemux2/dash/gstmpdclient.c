@@ -3160,26 +3160,51 @@ gst_mpd_client2_get_period_index_at_time (GstMPDClient2 * client,
       gst_mpd_client2_get_availability_start_time (client);
   GstStreamPeriod *stream_period;
 
-  if (avail_start == NULL)
+  if (avail_start == NULL) {
+    GST_LOG_OBJECT (client,
+        "No availabilityStartTime for this stream. Starting at period index 0");
     return 0;
+  }
 
   time_offset = gst_mpd_client2_calculate_time_difference (avail_start, time);
   gst_date_time_unref (avail_start);
 
-  if (time_offset < 0)
+  if (time_offset < 0) {
+    GST_LOG_OBJECT (client,
+        "Target time %" GST_PTR_FORMAT " is before availabiltyStartTime %"
+        GST_PTR_FORMAT " - starting at period index 0", time, &avail_start);
     return 0;
+  }
 
-  if (!gst_mpd_client2_setup_media_presentation (client, time_offset, -1, NULL))
+  if (!gst_mpd_client2_setup_media_presentation (client, time_offset, -1, NULL)) {
+    GST_LOG_OBJECT (client,
+        "Could not set up media presentation for time_offset %"
+        GST_STIMEP_FORMAT ". Will start at period index 0", &time_offset);
     return 0;
+  }
 
   for (idx = 0, iter = client->periods; iter; idx++, iter = g_list_next (iter)) {
     stream_period = iter->data;
+    if (idx == 0 && stream_period->start > time_offset) {
+      GST_LOG_OBJECT (client,
+          "Target time offset %" GST_STIMEP_FORMAT
+          " is before the first period with start %" GST_TIMEP_FORMAT
+          ". Starting there", &time_offset, &stream_period->start);
+      period_idx = idx;
+      break;
+    }
+
     if (stream_period->start <= time_offset
         && (!GST_CLOCK_TIME_IS_VALID (stream_period->duration)
             || stream_period->start + stream_period->duration > time_offset)) {
       period_idx = idx;
       break;
     }
+    GST_LOG_OBJECT (client,
+        "Target time offset %" GST_STIMEP_FORMAT
+        " was not in Period index %u with start %" GST_TIMEP_FORMAT
+        " duration %" GST_TIMEP_FORMAT, &time_offset, idx,
+        &stream_period->start, &stream_period->duration);
   }
 
   return period_idx;
