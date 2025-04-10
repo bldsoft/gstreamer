@@ -1367,7 +1367,8 @@ static gint64
 write_new_pcr (TsMux * mux, TsMuxStream * stream, gint64 cur_pcr,
     gint64 next_pcr)
 {
-  if (stream->next_pcr == -1 || next_pcr > stream->next_pcr) {
+  if (!stream->program->pcr_pid &&
+      (stream->next_pcr == -1 || next_pcr > stream->next_pcr)) {
     stream->pi.flags |=
         TSMUX_PACKET_FLAG_ADAPTATION | TSMUX_PACKET_FLAG_WRITE_PCR;
     stream->pi.pcr = cur_pcr;
@@ -1651,6 +1652,8 @@ tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
         stream->program->pi.flags &= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
         if (!tsmux_packet_out (mux, buf, new_pcr))
           return FALSE;
+        /* reset so we don't send PCR on PES too */
+        new_pcr = -1;
       }
     }
   }
