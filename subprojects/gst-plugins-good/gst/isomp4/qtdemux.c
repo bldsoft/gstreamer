@@ -15847,6 +15847,7 @@ qtdemux_video_caps (GstQTDemux * qtdemux, QtDemuxStream * stream,
       _codec ("Apple Intermediate Codec");
       caps = gst_caps_from_string ("video/x-apple-intermediate-codec");
       break;
+    case GST_MAKE_FOURCC ('A', 'V', 'd', 'h'):
     case GST_MAKE_FOURCC ('A', 'V', 'd', 'n'):
       _codec ("AVID DNxHD");
       caps = gst_caps_from_string ("video/x-dnxhd");
