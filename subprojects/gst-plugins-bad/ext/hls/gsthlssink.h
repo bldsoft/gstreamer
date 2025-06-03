@@ -55,6 +55,8 @@ struct _GstHlsSink
   gboolean waiting_fku;
   GstClockTime last_running_time;
   GstM3U8PlaylistRenderState state;
+  GDateTime* start_time;
+  gint64 program_date_time_shift;
 };
 
 struct _GstHlsSinkClass

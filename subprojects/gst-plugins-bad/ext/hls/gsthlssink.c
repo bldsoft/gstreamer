@@ -50,6 +50,8 @@ GST_DEBUG_CATEGORY_STATIC (gst_hls_sink_debug);
 #define DEFAULT_MAX_FILES 10
 #define DEFAULT_TARGET_DURATION 15
 #define DEFAULT_PLAYLIST_LENGTH 5
+#define DEFAULT_PROGRAM_DATE_TIME_MODE GST_HLS_PROGRAM_DATE_TIME_NEVER
+#define DEFAULT_PROGRAM_DATE_TIME_SHIFT 0
 
 #define GST_M3U8_PLAYLIST_VERSION 3
 
@@ -61,8 +63,17 @@ enum
   PROP_PLAYLIST_ROOT,
   PROP_MAX_FILES,
   PROP_TARGET_DURATION,
-  PROP_PLAYLIST_LENGTH
+  PROP_PLAYLIST_LENGTH,
+  PROP_GSTM3U8PLAYLIST_H_PATCH_VERSION,
+  PROP_GSTM3U8PLAYLIST_C_PATCH_VERSION,
+  PROP_GSTHLSSINK_H_PATCH_VERSION,
+  PROP_GSTHLSSINK_C_PATCH_VERSION,
+  PROP_PROGRAM_DATE_TIME_MODE,
+  PROP_PROGRAM_DATE_TIME_SHIFT,
 };
+
+const int RIXJOB_GSTHLSSINK_H_PATCH_VERSION = 1;
+const int RIXJOB_GSTHLSSINK_C_PATCH_VERSION = 1;
 
 static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
@@ -111,6 +122,8 @@ gst_hls_sink_finalize (GObject * object)
   g_free (sink->playlist_root);
   if (sink->playlist)
     gst_m3u8_playlist_free (sink->playlist);
+  if (sink->start_time)
+    g_date_time_unref (sink->start_time);
 
   G_OBJECT_CLASS (parent_class)->finalize ((GObject *) sink);
 }
@@ -173,6 +186,46 @@ gst_hls_sink_class_init (GstHlsSinkClass * klass)
           "the playlist will be infinite.",
           0, G_MAXUINT, DEFAULT_PLAYLIST_LENGTH,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class,
+      PROP_GSTM3U8PLAYLIST_H_PATCH_VERSION,
+      g_param_spec_uint ("gstm3u8playlist-h-patch-version",
+          "Version of pathch for gstm3u8playlist.h file",
+          "gstm3u8playlist.h patch version",
+          0, G_MAXUINT, RIXJOB_GSTM3U8PLAYLIST_H_PATCH_VERSION,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class,
+      PROP_GSTM3U8PLAYLIST_C_PATCH_VERSION,
+      g_param_spec_uint ("gstm3u8playlist-c-patch-version",
+          "Version of patch for gstm3u8playlist.c file",
+          "gstm3u8playlist.c patch version",
+          0, G_MAXUINT, RIXJOB_GSTM3U8PLAYLIST_C_PATCH_VERSION,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class,
+      PROP_GSTHLSSINK_H_PATCH_VERSION,
+      g_param_spec_uint ("gsthlssink-h-patch-version",
+          "Version of patch for gsthlssink.h file",
+          "gsthlssink.h patch version",
+          0, G_MAXUINT, RIXJOB_GSTHLSSINK_H_PATCH_VERSION,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class,
+      PROP_GSTHLSSINK_C_PATCH_VERSION,
+      g_param_spec_uint ("gsthlssink-c-patch-version",
+          "Version of patch for gsthlssink.c file",
+          "gsthlssink.c patch version", 0, G_MAXUINT,
+          RIXJOB_GSTHLSSINK_C_PATCH_VERSION,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_PROGRAM_DATE_TIME_MODE,
+      g_param_spec_enum ("program-date-time-mode",
+          "Mode for #EXT-X-PROGRAM-DATE-TIME tag",
+          "When to show #EXT-X-PROGRAM-DATE-TIME tag",
+          GST_HLS_PROGRAM_DATE_TIME_MODE_TYPE, DEFAULT_PROGRAM_DATE_TIME_MODE,
+          G_PARAM_READWRITE));
+  g_object_class_install_property (gobject_class, PROP_PROGRAM_DATE_TIME_SHIFT,
+      g_param_spec_int64 ("program-date-time-shift", "PROGRAM-DATE-TIME shift",
+          "PROGRAM-DATE-TIME shift in nanoseconds", G_MININT64, G_MAXINT64,
+          DEFAULT_PROGRAM_DATE_TIME_SHIFT,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static void
@@ -214,6 +267,10 @@ gst_hls_sink_reset (GstHlsSink * sink)
     gst_m3u8_playlist_free (sink->playlist);
   sink->playlist =
       gst_m3u8_playlist_new (GST_M3U8_PLAYLIST_VERSION, sink->playlist_length);
+  if (sink->start_time) {
+    g_date_time_unref (sink->start_time);
+    sink->start_time = NULL;
+  }
 
   sink->state = GST_M3U8_PLAYLIST_RENDER_INIT;
 }
@@ -287,6 +344,8 @@ gst_hls_sink_handle_message (GstBin * bin, GstMessage * message)
       gboolean discont = FALSE;
       gchar *entry_location;
       const GstStructure *structure;
+      GDateTime *program_date_time;
+      double chunk_time;
 
       structure = gst_message_get_structure (message);
       if (strcmp (gst_structure_get_name (structure), "GstMultiFileSink"))
@@ -295,6 +354,12 @@ gst_hls_sink_handle_message (GstBin * bin, GstMessage * message)
       filename = gst_structure_get_string (structure, "filename");
       gst_structure_get_clock_time (structure, "running-time", &running_time);
       duration = running_time - sink->last_running_time;
+
+      chunk_time = sink->last_running_time / (double) GST_SECOND +
+          sink->program_date_time_shift / (double) GST_SECOND;
+      program_date_time = g_date_time_add_seconds (sink->start_time,
+          chunk_time);
+
       sink->last_running_time = running_time;
 
       GST_INFO_OBJECT (sink, "COUNT %d", sink->index);
@@ -306,8 +371,8 @@ gst_hls_sink_handle_message (GstBin * bin, GstMessage * message)
         g_free (name);
       }
 
-      gst_m3u8_playlist_add_entry (sink->playlist, entry_location,
-          NULL, duration, sink->index, discont);
+      gst_m3u8_playlist_add_entry (sink->playlist, entry_location, NULL,
+          duration, sink->index, discont, program_date_time);
       g_free (entry_location);
 
       gst_hls_sink_write_playlist (sink);
@@ -353,6 +418,9 @@ gst_hls_sink_change_state (GstElement * element, GstStateChange trans)
       }
       break;
     case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
+      if (sink->start_time)
+        g_date_time_unref (sink->start_time);
+      sink->start_time = g_date_time_new_now_local ();
       break;
     default:
       break;
@@ -418,6 +486,12 @@ gst_hls_sink_set_property (GObject * object, guint prop_id,
       sink->playlist_length = g_value_get_uint (value);
       sink->playlist->window_size = sink->playlist_length;
       break;
+    case PROP_PROGRAM_DATE_TIME_MODE:
+      sink->playlist->program_date_time_mode = g_value_get_enum (value);
+      break;
+    case PROP_PROGRAM_DATE_TIME_SHIFT:
+      sink->program_date_time_shift = g_value_get_int64 (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -448,6 +522,24 @@ gst_hls_sink_get_property (GObject * object, guint prop_id,
       break;
     case PROP_PLAYLIST_LENGTH:
       g_value_set_uint (value, sink->playlist_length);
+      break;
+    case PROP_GSTM3U8PLAYLIST_H_PATCH_VERSION:
+      g_value_set_uint (value, RIXJOB_GSTM3U8PLAYLIST_H_PATCH_VERSION);
+      break;
+    case PROP_GSTM3U8PLAYLIST_C_PATCH_VERSION:
+      g_value_set_uint (value, RIXJOB_GSTM3U8PLAYLIST_C_PATCH_VERSION);
+      break;
+    case PROP_GSTHLSSINK_H_PATCH_VERSION:
+      g_value_set_uint (value, RIXJOB_GSTHLSSINK_H_PATCH_VERSION);
+      break;
+    case PROP_GSTHLSSINK_C_PATCH_VERSION:
+      g_value_set_uint (value, RIXJOB_GSTHLSSINK_C_PATCH_VERSION);
+      break;
+    case PROP_PROGRAM_DATE_TIME_MODE:
+      g_value_set_enum (value, sink->playlist->program_date_time_mode);
+      break;
+    case PROP_PROGRAM_DATE_TIME_SHIFT:
+      g_value_set_int64 (value, sink->program_date_time_shift);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
