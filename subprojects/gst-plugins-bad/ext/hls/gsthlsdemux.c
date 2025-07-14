@@ -1219,15 +1219,15 @@ gst_hls_demux_data_received (GstAdaptiveDemux * demux,
     g_value_init (&cue_tags_list, GST_TYPE_LIST);
 
     for (GList * tag = hlsdemux->cue_tags; tag != NULL; tag = tag->next) {
-      GValue ad_tag = G_VALUE_INIT;
-      g_value_init (&ad_tag, G_TYPE_STRING);
-      g_value_take_string (&ad_tag, (gchar *) tag->data);
+      GValue cue_tag = G_VALUE_INIT;
+      g_value_init (&cue_tag, G_TYPE_STRING);
+      g_value_take_string (&cue_tag, (gchar *) tag->data);
 
-      gst_value_list_append_and_take_value (&cue_tags_list, &ad_tag);
+      gst_value_list_append_and_take_value (&cue_tags_list, &cue_tag);
     }
     gst_structure_set_value (hls_cue_tags, "tags", &cue_tags_list);
-    gst_structure_set(hls_cue_tags, "position", G_TYPE_UINT64,
-                      stream->segment.position, NULL);
+    gst_structure_set (hls_cue_tags, "position", G_TYPE_UINT64,
+        stream->segment.position, NULL);
 
     gst_tag_list_add (tags, GST_TAG_MERGE_APPEND, "hls-cue-tags", hls_cue_tags,
         NULL);

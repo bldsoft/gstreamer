@@ -771,8 +771,8 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
 
           last_init_file = init_file;
         }
-      } else if (g_str_has_prefix (data_ext_x, "CUE-") &&
-          !g_str_has_prefix (data_ext_x, "CUE-OUT-CONT")) {
+      } else if (g_str_has_prefix (data_ext_x, "CUE-IN") ||
+          g_str_has_prefix (data_ext_x, "CUE-OUT:")) {
         cue_tags = g_list_prepend (cue_tags, g_strdup (data + 7));
       } else if (g_str_has_prefix (data_ext_x, "DATERANGE:")) {
         cue_tags = g_list_prepend (cue_tags, g_strdup (data + 7));
