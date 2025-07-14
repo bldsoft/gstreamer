@@ -218,6 +218,11 @@ gst_hls_demux_class_init (GstHLSDemuxClass * klass)
           "Version of patch for m3u8.c file", "m3u8.c patch version", 0,
           G_MAXUINT, RIXJOB_M3U8_C_PATCH_VERSION,
           G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+
+  gst_tag_register ("hls-cue-tags", GST_TAG_FLAG_META, GST_TYPE_STRUCTURE,
+      "HLS cue tags",
+      "A list of CUE and DATERANGE tags found in media playlist "
+      "and a timestamp for which moment they correspond", NULL);
 }
 
 static void
@@ -1159,6 +1164,7 @@ gst_hls_demux_data_received (GstAdaptiveDemux * demux,
 {
   GstHLSDemuxStream *hls_stream = GST_HLS_DEMUX_STREAM_CAST (stream);
   GstHLSDemux *hlsdemux = GST_HLS_DEMUX_CAST (demux);
+  GstTagList *tags = NULL;
 
   if (hls_stream->current_offset == -1)
     hls_stream->current_offset = 0;
@@ -1198,11 +1204,41 @@ gst_hls_demux_data_received (GstAdaptiveDemux * demux,
   }
 
   if (hlsdemux->prog_dt) {
-    gst_adaptive_demux_stream_set_tags (stream,
-        gst_tag_list_new (GST_TAG_DATE_TIME, hlsdemux->prog_dt, NULL));
+    tags = gst_tag_list_new (GST_TAG_DATE_TIME, hlsdemux->prog_dt, NULL);
     gst_date_time_unref (hlsdemux->prog_dt);
     hlsdemux->prog_dt = NULL;
   }
+
+  if (hlsdemux->cue_tags) {
+    GstStructure *hls_cue_tags = gst_structure_new_empty ("hls-cue-tags");
+    GValue cue_tags_list = G_VALUE_INIT;
+
+    if (!tags)
+      tags = gst_tag_list_new_empty ();
+
+    g_value_init (&cue_tags_list, GST_TYPE_LIST);
+
+    for (GList * tag = hlsdemux->cue_tags; tag != NULL; tag = tag->next) {
+      GValue cue_tag = G_VALUE_INIT;
+      g_value_init (&cue_tag, G_TYPE_STRING);
+      g_value_take_string (&cue_tag, (gchar *) tag->data);
+
+      gst_value_list_append_and_take_value (&cue_tags_list, &cue_tag);
+    }
+    gst_structure_set_value (hls_cue_tags, "tags", &cue_tags_list);
+    gst_structure_set (hls_cue_tags, "position", G_TYPE_UINT64,
+        stream->segment.position, NULL);
+
+    gst_tag_list_add (tags, GST_TAG_MERGE_APPEND, "hls-cue-tags", hls_cue_tags,
+        NULL);
+
+    g_value_unset (&cue_tags_list);
+    g_list_free (hlsdemux->cue_tags);
+    hlsdemux->cue_tags = NULL;
+  }
+
+  if (tags)
+    gst_adaptive_demux_stream_set_tags (stream, tags);
 
   return gst_hls_demux_handle_buffer (demux, stream, buffer, FALSE);
 }
@@ -1285,9 +1321,8 @@ gst_hls_demux_update_fragment_info (GstAdaptiveDemuxStream * stream)
   m3u8 = gst_hls_demux_stream_get_m3u8 (hlsdemux_stream);
 
   forward = (stream->demux->segment.rate > 0);
-  file =
-      gst_m3u8_get_next_fragment (m3u8, forward, &sequence_pos,
-      &hlsdemux->prog_dt, &discont);
+  file = gst_m3u8_get_next_fragment (m3u8, forward, &sequence_pos,
+      &hlsdemux->prog_dt, &hlsdemux->cue_tags, &discont);
 
   if (file == NULL) {
     GST_INFO_OBJECT (hlsdemux, "This playlist doesn't contain more fragments");
@@ -1403,6 +1438,11 @@ gst_hls_demux_reset (GstAdaptiveDemux * ademux)
   if (demux->prog_dt) {
     gst_date_time_unref (demux->prog_dt);
     demux->prog_dt = NULL;
+  }
+
+  if (demux->cue_tags) {
+    g_list_free_full (demux->cue_tags, (GFreeFunc) g_free);
+    demux->cue_tags = NULL;
   }
 
   GST_M3U8_CLIENT_UNLOCK (hlsdemux->client);

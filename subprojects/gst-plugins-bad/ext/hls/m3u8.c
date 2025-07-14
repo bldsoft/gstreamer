@@ -34,9 +34,9 @@
 const int RIXJOB_M3U8_H_PATCH_VERSION = 1;
 const int RIXJOB_M3U8_C_PATCH_VERSION = 1;
 
-static GstM3U8MediaFile *gst_m3u8_media_file_new (gchar * uri,
-    gchar * title, GstClockTime duration, guint sequence,
-    GstDateTime * program_dt);
+static GstM3U8MediaFile *gst_m3u8_media_file_new (gchar * uri, gchar * title,
+    GstClockTime duration,
+    guint sequence, GstDateTime * program_dt, GList * cue_tags);
 static void gst_m3u8_init_file_unref (GstM3U8InitFile * self);
 static gchar *uri_join (const gchar * uri, const gchar * path);
 
@@ -119,8 +119,9 @@ gst_m3u8_unref (GstM3U8 * self)
 }
 
 static GstM3U8MediaFile *
-gst_m3u8_media_file_new (gchar * uri, gchar * title, GstClockTime duration,
-    guint sequence, GstDateTime * program_dt)
+gst_m3u8_media_file_new (gchar * uri, gchar * title,
+    GstClockTime duration,
+    guint sequence, GstDateTime * program_dt, GList * cue_tags)
 {
   GstM3U8MediaFile *file;
 
@@ -131,6 +132,7 @@ gst_m3u8_media_file_new (gchar * uri, gchar * title, GstClockTime duration,
   file->sequence = sequence;
   file->ref_count = 1;
   file->program_dt = program_dt;
+  file->cue_tags = cue_tags;
 
   return file;
 }
@@ -157,6 +159,8 @@ gst_m3u8_media_file_unref (GstM3U8MediaFile * self)
     g_free (self->key);
     if (self->program_dt)
       gst_date_time_unref (self->program_dt);
+    if (self->cue_tags)
+      g_list_free_full (self->cue_tags, g_free);
     g_free (self);
   }
 }
@@ -491,6 +495,7 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
 {
   gint val;
   GstDateTime *program_dt = NULL;
+  GList *cue_tags = NULL;
   GstClockTime duration;
   gchar *title, *end;
   gboolean discontinuity = FALSE;
@@ -566,10 +571,10 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
       data = uri_join (self->base_uri ? self->base_uri : self->uri, data);
       if (data != NULL) {
         GstM3U8MediaFile *file;
-        file =
-            gst_m3u8_media_file_new (data, title, duration,
-            mediasequence++, program_dt);
+        file = gst_m3u8_media_file_new (data, title, duration, mediasequence++,
+            program_dt, cue_tags);
         program_dt = NULL;
+        cue_tags = NULL;
 
         /* set encryption params */
         file->key = current_key ? g_strdup (current_key) : NULL;
@@ -766,6 +771,11 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
 
           last_init_file = init_file;
         }
+      } else if (g_str_has_prefix (data_ext_x, "CUE-IN") ||
+          g_str_has_prefix (data_ext_x, "CUE-OUT:")) {
+        cue_tags = g_list_prepend (cue_tags, g_strdup (data + 7));
+      } else if (g_str_has_prefix (data_ext_x, "DATERANGE:")) {
+        cue_tags = g_list_prepend (cue_tags, g_strdup (data + 7));
       } else {
         GST_LOG ("Ignored line: %s", data);
       }
@@ -939,8 +949,8 @@ m3u8_find_next_fragment (GstM3U8 * m3u8, gboolean forward)
 
 GstM3U8MediaFile *
 gst_m3u8_get_next_fragment (GstM3U8 * m3u8, gboolean forward,
-    GstClockTime * sequence_position, GstDateTime ** program_dt,
-    gboolean * discont)
+    GstClockTime * sequence_position,
+    GstDateTime ** program_dt, GList ** cue_tags, gboolean * discont)
 {
   GstM3U8MediaFile *file = NULL;
 
@@ -970,6 +980,11 @@ gst_m3u8_get_next_fragment (GstM3U8 * m3u8, gboolean forward,
   if (program_dt)
     *program_dt =
         file->program_dt ? gst_date_time_ref (file->program_dt) : NULL;
+
+  if (cue_tags)
+    *cue_tags = file->cue_tags ? g_list_copy_deep (file->cue_tags,
+        (GCopyFunc) g_strdup, NULL)
+        : NULL;
 
   if (discont)
     *discont = file->discont || (m3u8->sequence != file->sequence);
