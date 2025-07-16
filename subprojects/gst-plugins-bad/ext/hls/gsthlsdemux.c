@@ -1227,7 +1227,7 @@ gst_hls_demux_data_received (GstAdaptiveDemux * demux,
     }
     gst_structure_set_value (hls_cue_tags, "tags", &cue_tags_list);
     gst_structure_set (hls_cue_tags, "position", G_TYPE_UINT64,
-        stream->segment.position, NULL);
+        stream->segment.position - stream->fragment.duration, NULL);
 
     gst_tag_list_add (tags, GST_TAG_MERGE_APPEND, "hls-cue-tags", hls_cue_tags,
         NULL);
