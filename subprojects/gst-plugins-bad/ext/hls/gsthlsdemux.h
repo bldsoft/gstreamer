@@ -142,6 +142,7 @@ struct _GstHLSDemux
   GMutex      keys_lock;
 
   GstDateTime *prog_dt;
+  GList *cue_tags;
 
   /* FIXME: check locking, protected automatically by manifest_lock already? */
   /* The master playlist with the available variant streams */
