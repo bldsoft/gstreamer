@@ -416,9 +416,9 @@ gst_hls_sink_handle_message (GstBin * bin, GstMessage * message)
 
       /* multifilesink is an internal implementation detail. If applications
        * need a notification, we should probably do our own message */
-      GST_DEBUG_OBJECT (bin, "dropping message %" GST_PTR_FORMAT, message);
-      gst_message_unref (message);
-      message = NULL;
+      // GST_DEBUG_OBJECT (bin, "dropping message %" GST_PTR_FORMAT, message);
+      // gst_message_unref (message);
+      // message = NULL;
       break;
     }
     case GST_MESSAGE_EOS:{
