@@ -133,6 +133,10 @@ gst_base_ts_mux_pad_reset (GstBaseTsMuxPad * pad)
 
   pad->bitrate = 0;
   pad->max_bitrate = 0;
+
+  pad->subtitling_type = 0x10;
+  pad->composition_page_id = 0x0001;
+  pad->ancillary_page_id = 0x0152;
 }
 
 /* GstAggregatorPad implementation */
@@ -1034,6 +1038,10 @@ gst_base_ts_mux_create_or_update_stream (GstBaseTsMux * mux,
   ts_pad->stream->opus_channel_config_len = opus_channel_config_len;
 
   tsmux_stream_set_buffer_release_func (ts_pad->stream, release_buffer_cb);
+
+  ts_pad->stream->subtitling_type = ts_pad->subtitling_type;
+  ts_pad->stream->composition_page_id = ts_pad->composition_page_id;
+  ts_pad->stream->ancillary_page_id = ts_pad->ancillary_page_id;
 
   return GST_FLOW_OK;
 
@@ -2454,6 +2462,89 @@ gst_base_ts_mux_sink_event (GstAggregator * agg, GstAggregatorPad * agg_pad,
         }
         res = TRUE;
         forward = FALSE;
+        goto out;
+      } else if (gst_structure_has_name (s, "descriptors")) {
+        res = TRUE;
+        forward = FALSE;
+
+        guint8 subtitling_type = 0;
+        guint16 composition_page_id = 0;
+        guint16 ancillary_page_id = 0;
+
+        const GValue *list = gst_structure_get_value (s, "list");
+        if (list != NULL) {
+          for (guint i = 0; i < gst_value_list_get_size (list); ++i) {
+            const GValue *value = gst_value_list_get_value (list, i);
+            const GstStructure *mod_struct = gst_value_get_structure (value);
+            guint tmp;
+
+            if (mod_struct == NULL ||
+                !gst_structure_has_name (mod_struct, "dvb_subtitling")) {
+              continue;
+            }
+
+            if (gst_structure_has_field (mod_struct, "subtitling_type")) {
+              gboolean ret =
+                  gst_structure_get_uint (mod_struct, "subtitling_type", &tmp);
+              if (ret) {
+                subtitling_type = (guint16) tmp;
+              }
+            }
+
+            if (gst_structure_has_field (mod_struct, "composition_page_id")) {
+              gboolean ret =
+                  gst_structure_get_uint (mod_struct, "composition_page_id",
+                  &tmp);
+              if (ret) {
+                composition_page_id = (guint16) tmp;
+              }
+            }
+
+            if (gst_structure_has_field (mod_struct, "ancillary_page_id")) {
+              gboolean ret =
+                  gst_structure_get_uint (mod_struct, "ancillary_page_id",
+                  &tmp);
+              if (ret) {
+                ancillary_page_id = (guint16) tmp;
+              }
+            }
+          }
+        }
+
+        if (subtitling_type && composition_page_id && ancillary_page_id) {
+          gboolean resend_pmts = FALSE;
+
+          if (ts_pad->stream == NULL) {
+            ts_pad->subtitling_type = subtitling_type;
+            ts_pad->composition_page_id = composition_page_id;
+            ts_pad->ancillary_page_id = ancillary_page_id;
+            break;
+          }
+
+          if (ts_pad->stream->subtitling_type != subtitling_type) {
+            ts_pad->stream->subtitling_type = subtitling_type;
+            resend_pmts = TRUE;
+          }
+          if (ts_pad->stream->composition_page_id != composition_page_id) {
+            ts_pad->stream->composition_page_id = composition_page_id;
+            resend_pmts = TRUE;
+          }
+          if (ts_pad->stream->ancillary_page_id != ancillary_page_id) {
+            ts_pad->stream->ancillary_page_id = ancillary_page_id;
+            resend_pmts = TRUE;
+          }
+
+          if (resend_pmts) {
+            g_mutex_lock (&mux->lock);
+            mux->tsmux->pat_changed = TRUE;
+            mux->tsmux->si_changed = TRUE;
+            tsmux_resend_pat (mux->tsmux);
+            tsmux_resend_si (mux->tsmux);
+            gst_base_ts_mux_resend_all_pmts (mux);
+            g_mutex_unlock (&mux->lock);
+          }
+        }
+
         goto out;
       }
 
