@@ -131,6 +131,11 @@ struct _GstBaseTsMuxPad
   gint bitrate;
   gint max_bitrate;
   gint stream_number;
+
+  /* DVB Subtitles */
+  guint8 subtitling_type;
+  guint16 composition_page_id;
+  guint16 ancillary_page_id;
 };
 
 struct _GstBaseTsMuxPadClass
