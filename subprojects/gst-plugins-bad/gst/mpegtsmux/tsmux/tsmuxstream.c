@@ -506,6 +506,10 @@ tsmux_stream_initialize_pes_packet (TsMuxStream *stream)
     if ((stream->cur_pes_payload_size + hdr_len - 6) > G_MAXUINT16)
       stream->cur_pes_payload_size = 0;
   }
+  // FIXME: determine how to handle other types
+  if (stream->is_dvb_sub) {
+    stream->pi.flags |= TSMUX_PACKET_FLAG_PES_DATA_ALIGNMENT;
+  }
 
   return TRUE;
 }
