@@ -549,6 +549,10 @@ tsmux_stream_initialize_pes_packet (TsMuxStream * stream)
   if (stream->stream_type == TSMUX_ST_PES_METADATA) {
     stream->pi.flags |= TSMUX_PACKET_FLAG_PES_DATA_ALIGNMENT;
   }
+  // FIXME: determine how to handle other types
+  if (stream->is_dvb_sub) {
+    stream->pi.flags |= TSMUX_PACKET_FLAG_PES_DATA_ALIGNMENT;
+  }
 
   return TRUE;
 }
