@@ -171,7 +171,7 @@ struct GstBaseTsMux {
   guint scte35_null_interval;
   guint32 last_scte35_event_seqnum;
   guint64 timestamp_shift;
-  guint64 dvbsub_ready_margin;
+  guint64 dvbsub_ready_window;
 
   /* state */
   gboolean first;
