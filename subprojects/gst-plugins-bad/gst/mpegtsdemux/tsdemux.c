@@ -1205,28 +1205,29 @@ handle_psi (MpegTSBase * base, GstMpegtsSection * section)
     if (demux->send_descriptors) {
       const GstMpegtsPMT *pmt = gst_mpegts_section_get_pmt (section);
       GstMpegtsPMTStream *stream = NULL;
-      GstMpegtsDescriptor *descriptor = NULL;
-      gchar *lang = NULL;
-      guint8 subtitling_type;
-      guint16 composition_page_id;
-      guint16 ancillary_page_id;
       GstStructure *descriptors = NULL;
-      GValue va = G_VALUE_INIT;
-      GValue v = G_VALUE_INIT;
       GstStructure *descriptor_struct = NULL;
 
       for (guint i = 0; i < pmt->streams->len; ++i) {
         stream = (GstMpegtsPMTStream *) (g_ptr_array_index (pmt->streams, i));
 
         for (guint j = 0; j < stream->descriptors->len; ++j) {
-          descriptor =
+          GstMpegtsDescriptor *descriptor =
               (GstMpegtsDescriptor *) (g_ptr_array_index (stream->descriptors,
                   j));
 
           if (descriptor && descriptor->tag == GST_MTS_DESC_DVB_SUBTITLING) {
+            gchar *lang = NULL;
+            guint8 subtitling_type;
+            guint16 composition_page_id;
+            guint16 ancillary_page_id;
+
             if (gst_mpegts_descriptor_parse_dvb_subtitling_idx (descriptor, 0,
                     &lang, &subtitling_type, &composition_page_id,
                     &ancillary_page_id)) {
+              GValue va = G_VALUE_INIT;
+              GValue v = G_VALUE_INIT;
+
               g_free (lang);
 
               g_value_init (&va, GST_TYPE_LIST);
@@ -1240,6 +1241,7 @@ handle_psi (MpegTSBase * base, GstMpegtsSection * section)
                   G_TYPE_UINT, ancillary_page_id, NULL);
 
               gst_value_set_structure (&v, descriptor_struct);
+              gst_structure_free (descriptor_struct);
               gst_value_list_append_and_take_value (&va, &v);
               gst_structure_take_value (descriptors, "list", &va);
 
@@ -1249,20 +1251,27 @@ handle_psi (MpegTSBase * base, GstMpegtsSection * section)
         }
 
         if (descriptors) {
-          GstEvent *event = NULL;
           GList *tmp;
+          gboolean sent = FALSE;
 
           for (tmp = demux->program->stream_list; tmp; tmp = tmp->next) {
             TSDemuxStream *demux_stream = (TSDemuxStream *) tmp->data;
 
             if (demux_stream->stream.pid == stream->pid) {
               if (demux_stream->pad) {
-                event = gst_event_new_custom (GST_EVENT_CUSTOM_DOWNSTREAM,
+                GstEvent *event =
+                    gst_event_new_custom (GST_EVENT_CUSTOM_DOWNSTREAM,
                     descriptors);
                 gst_pad_push_event (demux_stream->pad, event);
+                sent = TRUE;
               }
             }
           }
+
+          if (!sent) {
+            gst_structure_free (descriptors);
+          }
+          descriptors = NULL;
         }
       }
     }
