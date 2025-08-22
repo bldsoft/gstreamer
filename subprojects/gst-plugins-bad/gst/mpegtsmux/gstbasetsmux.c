@@ -265,7 +265,8 @@ enum
   PROP_SCTE_35_PID,
   PROP_SCTE_35_NULL_INTERVAL,
   PROP_ENABLE_CUSTOM_MAPPINGS,
-  PROP_TIMESTAMP_SHIFT
+  PROP_TIMESTAMP_SHIFT,
+  PROP_DVBSUB_READY_MARGIN
 };
 
 #define DEFAULT_SCTE_35_PID 0
@@ -2804,6 +2805,7 @@ static GstBaseTsMuxPad *
 gst_base_ts_mux_find_best_pad (GstAggregator * aggregator,
     GstClockTime * best_time, gboolean timeout)
 {
+  GstBaseTsMux *mux = GST_BASE_TS_MUX (aggregator);
   GstBaseTsMuxPad *best = NULL;
   GstClockTime best_ts = GST_CLOCK_TIME_NONE;
   GList *l;
@@ -2834,6 +2836,18 @@ gst_base_ts_mux_find_best_pad (GstAggregator * aggregator,
       best_ts = ts;
       gst_buffer_unref (buffer);
       break;
+    }
+
+    /* Send DVB Subtitle packets earlier */
+    if (mux->dvbsub_ready_margin != 0 && tpad->stream &&
+        tpad->stream->is_dvb_sub) {
+      if (GST_CLOCK_TIME_IS_VALID (best_ts) &&
+          (ts >= best_ts && ts - best_ts <= mux->dvbsub_ready_margin)) {
+        best = tpad;
+        best_ts = ts;
+        gst_buffer_unref (buffer);
+        break;
+      }
     }
 
     if (!GST_CLOCK_TIME_IS_VALID (best_ts) || ts < best_ts) {
@@ -3113,6 +3127,13 @@ gst_base_ts_mux_set_property (GObject * object, guint prop_id,
       if (mux->tsmux)
         mux->timestamp_shift = g_value_get_int64 (value);
       break;
+    case PROP_DVBSUB_READY_MARGIN:
+      mux->dvbsub_ready_margin = g_value_get_uint64 (value);
+      g_mutex_lock (&mux->lock);
+      if (mux->tsmux)
+        tsmux_set_dvbsub_ready_margin (mux->tsmux, mux->dvbsub_ready_margin);
+      g_mutex_unlock (&mux->lock);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -3162,6 +3183,9 @@ gst_base_ts_mux_get_property (GObject * object, guint prop_id,
     case PROP_TIMESTAMP_SHIFT:
       g_value_set_int64 (value, mux->tsmux->timestamp_shift);
       break;
+    case PROP_DVBSUB_READY_MARGIN:
+      g_value_set_uint64 (value, mux->dvbsub_ready_margin);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -3181,6 +3205,7 @@ gst_base_ts_mux_default_create_ts_mux (GstBaseTsMux * mux)
   tsmux_set_bitrate (tsmux, mux->bitrate);
   tsmux_set_pcr_interval (tsmux, mux->pcr_interval);
   tsmux_timestamp_shift (tsmux, mux->timestamp_shift);
+  tsmux_set_dvbsub_ready_margin (tsmux, mux->dvbsub_ready_margin);
 
   return tsmux;
 }
@@ -3343,6 +3368,14 @@ gst_base_ts_mux_class_init (GstBaseTsMuxClass * klass)
           "Timestamp shift",
           "Set PTS/DTS and PCR shift (in ticks of the 90kHz clock)",
           G_MININT64, G_MAXINT64, TIMESTAMP_SHIFT_DEFAULT,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_DVBSUB_READY_MARGIN, g_param_spec_uint64 ("dvbsub-ready-margin",
+          "DVB Subtitles scheduling margin",
+          "The difference between best available timestamp and DVBSUB packet "
+          "timestamp should be smaller than this value (in ns) to consider "
+          "them ready to be sent (0 = disabled)", 0, G_MAXUINT64, 0,
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
   gst_element_class_add_static_pad_template_with_gtype (gstelement_class,
