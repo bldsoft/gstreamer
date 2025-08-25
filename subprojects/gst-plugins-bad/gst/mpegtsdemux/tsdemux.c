@@ -1222,6 +1222,10 @@ handle_psi (MpegTSBase * base, GstMpegtsSection * section)
       GstStructure *descriptors = NULL;
       GstStructure *descriptor_struct = NULL;
 
+      if (!demux->program) {
+        return;
+      }
+
       for (guint i = 0; i < pmt->streams->len; ++i) {
         stream = (GstMpegtsPMTStream *) (g_ptr_array_index (pmt->streams, i));
 
