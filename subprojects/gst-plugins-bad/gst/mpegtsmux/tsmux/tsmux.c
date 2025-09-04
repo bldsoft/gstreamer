@@ -1610,11 +1610,15 @@ tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
   gint64 new_pcr = -1;
   GstBuffer *buf = NULL;
   GstMapInfo map;
+  gboolean ignore_dvbsub = TRUE;
 
   g_return_val_if_fail (mux != NULL, FALSE);
   g_return_val_if_fail (stream != NULL, FALSE);
 
-  if (tsmux_stream_is_pcr (stream) || stream->program->pcr_pid) {
+  ignore_dvbsub = (!stream->is_dvb_sub && mux->dvbsub_ready_window != 0) ||
+      mux->dvbsub_ready_window == 0;
+  if ((tsmux_stream_is_pcr (stream) || stream->program->pcr_pid) &&
+      ignore_dvbsub) {
     gint64 cur_ts = mux->timestamp_shift;
 
     if (tsmux_stream_get_dts (stream) != G_MININT64)
@@ -1921,4 +1925,10 @@ void
 tsmux_timestamp_shift (TsMux * mux, gint64 shift)
 {
   mux->timestamp_shift = shift;
+}
+
+void
+tsmux_set_dvbsub_ready_window (TsMux * mux, guint64 dvbsub_ready_window)
+{
+  mux->dvbsub_ready_window = dvbsub_ready_window;
 }
