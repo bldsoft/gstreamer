@@ -1820,6 +1820,21 @@ gst_ffmpegviddec_do_qos (GstFFMpegVidDec * ffmpegdec,
   }
 }
 
+static void
+avviddec_copy_meta (GstBuffer * outbuf, GstBuffer * buf)
+{
+  GstMetaTransformCopy copy_data = { FALSE, 0, -1 };
+  gpointer iter = NULL;
+  GstMeta *meta;
+
+  while ((meta = gst_buffer_iterate_meta (buf, &iter))) {
+    if (meta->info->api == GST_VIDEO_CAPTION_META_API_TYPE) {
+      meta->info->transform_func (outbuf, meta, buf, _gst_meta_transform_copy,
+          &copy_data);
+    }
+  }
+}
+
 /* get an outbuf buffer with the current picture */
 static GstFlowReturn
 get_output_buffer (GstFFMpegVidDec * ffmpegdec, GstVideoCodecFrame * frame)
@@ -2115,33 +2130,55 @@ gst_ffmpegviddec_video_frame (GstFFMpegVidDec * ffmpegdec,
    * In any case, not likely to be seen again, so discard those,
    * before they pile up and/or mess with timestamping */
   {
-    GList *l, *ol;
     GstVideoDecoder *dec = GST_VIDEO_DECODER (ffmpegdec);
+    GList *ol = gst_video_decoder_get_frames (dec);
     gboolean old = TRUE;
 
-    ol = l = gst_video_decoder_get_frames (dec);
-    while (l) {
+    for (GList * l = ol; l; l = l->next) {
       GstVideoCodecFrame *tmp = l->data;
+      gboolean valid_ts;
 
       if (tmp == output_frame)
         old = FALSE;
 
-      if (old && GST_VIDEO_CODEC_FRAME_IS_DECODE_ONLY (tmp)) {
-        GST_LOG_OBJECT (dec,
-            "discarding ghost frame %p (#%d) PTS:%" GST_TIME_FORMAT " DTS:%"
-            GST_TIME_FORMAT, tmp, tmp->system_frame_number,
-            GST_TIME_ARGS (tmp->pts), GST_TIME_ARGS (tmp->dts));
-        /* drop extra ref and remove from frame list */
-        GST_VIDEO_CODEC_FRAME_FLAG_UNSET (tmp,
-            GST_FFMPEG_VIDEO_CODEC_FRAME_FLAG_ALLOCATED);
-        gst_video_decoder_release_frame (dec, tmp);
-      } else {
-        /* drop extra ref we got */
-        gst_video_codec_frame_unref (tmp);
-      }
-      l = l->next;
+      if (!GST_VIDEO_CODEC_FRAME_IS_DECODE_ONLY (tmp))
+        continue;
+
+      /* HACK: Accumulate ghost frame metadata into real frame
+       * https://gitlab.freedesktop.org/gstreamer/gstreamer/-/issues/4167
+       */
+
+      valid_ts = (GST_CLOCK_TIME_IS_VALID (output_frame->pts) &&
+          GST_CLOCK_TIME_IS_VALID (tmp->pts));
+
+      if (valid_ts && tmp->pts > output_frame->pts)
+        continue;
+
+      if (!valid_ts && !old)
+        continue;
+
+      if (tmp->pts < output_frame->pts)
+        output_frame->pts = tmp->pts;
+      if (GST_CLOCK_TIME_IS_VALID (output_frame->duration) &&
+          GST_CLOCK_TIME_IS_VALID (tmp->duration))
+        output_frame->duration += tmp->duration;
+      output_frame->output_buffer =
+          gst_buffer_make_writable (output_frame->output_buffer);
+      avviddec_copy_meta (output_frame->output_buffer, tmp->input_buffer);
+
+      GST_LOG_OBJECT (dec,
+          "discarding ghost frame %p (#%d) PTS:%" GST_TIME_FORMAT " DTS:%"
+          GST_TIME_FORMAT, tmp, tmp->system_frame_number,
+          GST_TIME_ARGS (tmp->pts), GST_TIME_ARGS (tmp->dts));
+
+      /* remove from frame list */
+      GST_VIDEO_CODEC_FRAME_FLAG_UNSET (tmp,
+          GST_FFMPEG_VIDEO_CODEC_FRAME_FLAG_ALLOCATED);
+      gst_video_codec_frame_ref (tmp);  /* extra ref for g_list_free_full */
+      gst_video_decoder_release_frame (dec, tmp);
     }
-    g_list_free (ol);
+
+    g_list_free_full (ol, (GDestroyNotify) gst_video_codec_frame_unref);
   }
 
   av_frame_unref (ffmpegdec->picture);
