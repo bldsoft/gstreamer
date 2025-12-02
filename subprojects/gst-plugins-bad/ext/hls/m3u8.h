@@ -100,6 +100,7 @@ struct _GstM3U8MediaFile
   guint8 iv[16];
   gint64 offset, size;
   GstDateTime *program_dt;      /* program date time */
+  GList *cue_tags;
   gint ref_count;               /* ATOMIC */
   GstM3U8InitFile *init_file;   /* Media Initialization (hold ref) */
 };
@@ -129,6 +130,7 @@ GstM3U8MediaFile * gst_m3u8_get_next_fragment    (GstM3U8      * m3u8,
                                                   gboolean       forward,
                                                   GstClockTime * sequence_position,
                                                   GstDateTime ** program_dt,
+                                                  GList       ** cue_tags,
                                                   gboolean     * discont);
 
 gboolean           gst_m3u8_has_next_fragment    (GstM3U8 * m3u8,
@@ -241,6 +243,12 @@ GstHLSVariantStream *  gst_hls_master_playlist_get_matching_variant (GstHLSMaste
                                                                      GstHLSVariantStream  * current_variant);
 
 void                   gst_hls_master_playlist_unref (GstHLSMasterPlaylist * playlist);
+
+gint                   gst_m3u8_compare_uri_without_tokens (const gchar * lhs,
+                                                            const gchar * rhs);
+
+extern const int RIXJOB_M3U8_H_PATCH_VERSION;
+extern const int RIXJOB_M3U8_C_PATCH_VERSION;
 
 G_END_DECLS
 

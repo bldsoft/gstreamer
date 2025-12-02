@@ -65,7 +65,7 @@ GST_DEBUG_CATEGORY_STATIC (opusenc_debug);
    The spec mentions 6 kb/s to 510 kb/s, so 4000 and 650000 ought to be
    safe as property bounds. */
 #define LOWEST_BITRATE 4000
-#define HIGHEST_BITRATE 650000
+#define HIGHEST_BITRATE 2000000
 
 #define GST_OPUS_ENC_TYPE_BANDWIDTH (gst_opus_enc_bandwidth_get_type())
 static GType

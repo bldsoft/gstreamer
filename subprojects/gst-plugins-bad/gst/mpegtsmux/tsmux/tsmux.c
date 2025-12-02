@@ -98,7 +98,7 @@
 
 /* Base for all written PCR and DTS/PTS,
  * so we have some slack to go backwards */
-#define CLOCK_BASE (TSMUX_CLOCK_FREQ * 10 * 360)
+//#define CLOCK_BASE (TSMUX_CLOCK_FREQ * 10 * 360)
 
 static gboolean tsmux_write_pat (TsMux * mux);
 static gboolean tsmux_write_pmt (TsMux * mux, TsMuxProgram * program);
@@ -1372,7 +1372,8 @@ static gint64
 write_new_pcr (TsMux * mux, TsMuxStream * stream, gint64 cur_pcr,
     gint64 next_pcr)
 {
-  if (stream->next_pcr == -1 || next_pcr > stream->next_pcr) {
+  if (!stream->program->pcr_pid &&
+      (stream->next_pcr == -1 || next_pcr > stream->next_pcr)) {
     stream->pi.flags |=
         TSMUX_PACKET_FLAG_ADAPTATION | TSMUX_PACKET_FLAG_WRITE_PCR;
     stream->pi.pcr = cur_pcr;
@@ -1617,12 +1618,17 @@ tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
   gint64 new_pcr = -1;
   GstBuffer *buf = NULL;
   GstMapInfo map;
+  gboolean ignore_dvbsub = TRUE;
 
   g_return_val_if_fail (mux != NULL, FALSE);
   g_return_val_if_fail (stream != NULL, FALSE);
 
-  if (tsmux_stream_is_pcr (stream) || stream->program->pcr_pid) {
-    gint64 cur_ts = CLOCK_BASE;
+  ignore_dvbsub = (!stream->is_dvb_sub && mux->dvbsub_ready_window != 0) ||
+      mux->dvbsub_ready_window == 0;
+  if ((tsmux_stream_is_pcr (stream) || stream->program->pcr_pid) &&
+      ignore_dvbsub) {
+    gint64 cur_ts = mux->timestamp_shift;
+
     if (tsmux_stream_get_dts (stream) != G_MININT64)
       cur_ts += tsmux_stream_get_dts (stream);
     else
@@ -1658,6 +1664,8 @@ tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
         stream->program->pi.flags &= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
         if (!tsmux_packet_out (mux, buf, new_pcr, FALSE))
           return FALSE;
+        /* reset so we don't send PCR on PES too */
+        new_pcr = -1;
       }
     }
   }
@@ -1666,9 +1674,13 @@ tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
   if (pi->packet_start_unit_indicator) {
     tsmux_stream_initialize_pes_packet (stream);
     if (stream->dts != G_MININT64)
-      stream->dts += CLOCK_BASE;
-    if (stream->pts != G_MININT64)
-      stream->pts += CLOCK_BASE;
+      stream->dts += mux->timestamp_shift;
+    if (stream->pts != G_MININT64) {
+      stream->pts += mux->timestamp_shift;
+      if (stream->pts < stream->dts || stream->dts < 0) {
+        stream->dts = stream->pts;
+      }
+    }
   }
   pi->stream_avail = tsmux_stream_bytes_avail (stream);
 
@@ -1945,4 +1957,16 @@ tsmux_set_bitrate (TsMux * mux, guint64 bitrate)
     mux->n_bytes = new_byte_counter;
   }
   mux->bitrate = bitrate;
+}
+
+void
+tsmux_timestamp_shift (TsMux * mux, gint64 shift)
+{
+  mux->timestamp_shift = shift;
+}
+
+void
+tsmux_set_dvbsub_ready_window (TsMux * mux, guint64 dvbsub_ready_window)
+{
+  mux->dvbsub_ready_window = dvbsub_ready_window;
 }

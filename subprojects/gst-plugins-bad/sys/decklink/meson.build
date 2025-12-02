@@ -16,15 +16,29 @@ decklink_headers = [
   'gstdecklinkaudiosink.h',
   'gstdecklinkvideosink.h',
 ]
+install_headers(decklink_headers, subdir : 'gstreamer-1.0/gst/decklink')
 
 windows_sources = [
   'win/DeckLinkAPIDispatch.cpp',
   'win/DeckLinkAPI_i.c'
 ]
 
+linux_headers = [
+  'linux/DeckLinkAPI.h',
+  'linux/DeckLinkAPIConfiguration.h',
+  'linux/DeckLinkAPIDeckControl.h',
+  'linux/DeckLinkAPIDiscovery.h',
+  'linux/DeckLinkAPIModes.h',
+  'linux/DeckLinkAPITypes.h',
+  'linux/DeckLinkAPIVersion.h',
+  'linux/LinuxCOM.h',
+]
+install_headers(linux_headers, subdir : 'gstreamer-1.0/gst/decklink/linux')
+
 linux_sources = [
   'linux/DeckLinkAPIDispatch.cpp',
 ]
+install_headers(linux_sources, subdir : 'gstreamer-1.0/gst/decklink/linux')
 
 osx_sources = [
   'osx/DeckLinkAPIDispatch.cpp'

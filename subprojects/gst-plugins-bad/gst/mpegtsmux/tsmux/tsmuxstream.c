@@ -232,6 +232,10 @@ tsmux_stream_new (guint16 pid, guint stream_type, guint stream_number)
           TSMUX_PACKET_FLAG_PES_FULL_HEADER |
           TSMUX_PACKET_FLAG_PES_DATA_ALIGNMENT;
 
+      stream->subtitling_type = 0x10;
+      stream->composition_page_id = 0x0001;
+      stream->ancillary_page_id = 0x0152;
+
       break;
     case TSMUX_ST_PS_KLV:
       /* FIXME: assign sequential extended IDs? */
@@ -554,6 +558,10 @@ tsmux_stream_initialize_pes_packet (TsMuxStream * stream)
           max_payload_len);
       stream->cur_pes_payload_size = max_payload_len;
     }
+  }
+  // FIXME: determine how to handle other types
+  if (stream->is_dvb_sub) {
+    stream->pi.flags |= TSMUX_PACKET_FLAG_PES_DATA_ALIGNMENT;
   }
 
   return TRUE;
@@ -949,16 +957,8 @@ tsmux_stream_default_get_es_descrs (TsMuxStream * stream,
       /* FIXME */
       break;
     case TSMUX_ST_VIDEO_H264:
-    {
-      /* FIXME : Not sure about this additional_identification_info */
-      guint8 add_info[] = { 0xFF, 0x1B, 0x44, 0x3F };
-
-      descriptor = gst_mpegts_descriptor_from_registration ("HDMV",
-          add_info, 4);
-
-      g_ptr_array_add (pmt_stream->descriptors, descriptor);
+      // https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/-/issues/1343
       break;
-    }
     case TSMUX_ST_VIDEO_DIRAC:
       descriptor = gst_mpegts_descriptor_from_registration ("drac", NULL, 0);
       g_ptr_array_add (pmt_stream->descriptors, descriptor);
@@ -1035,8 +1035,9 @@ tsmux_stream_default_get_es_descrs (TsMuxStream * stream,
         /* Default composition page ID */
         /* Default ancillary_page_id */
         descriptor =
-            gst_mpegts_descriptor_from_dvb_subtitling (stream->language, 0x10,
-            0x0001, 0x0152);
+            gst_mpegts_descriptor_from_dvb_subtitling (stream->language,
+            stream->subtitling_type, stream->composition_page_id,
+            stream->ancillary_page_id);
 
         g_ptr_array_add (pmt_stream->descriptors, descriptor);
         break;

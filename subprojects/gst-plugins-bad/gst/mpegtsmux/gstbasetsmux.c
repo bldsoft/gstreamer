@@ -90,6 +90,8 @@
 GST_DEBUG_CATEGORY (gst_base_ts_mux_debug);
 #define GST_CAT_DEFAULT gst_base_ts_mux_debug
 
+#define TIMESTAMP_SHIFT_DEFAULT (TSMUX_CLOCK_FREQ * 10 * 360)
+
 /* GstBaseTsMuxPad */
 
 G_DEFINE_TYPE (GstBaseTsMuxPad, gst_base_ts_mux_pad, GST_TYPE_AGGREGATOR_PAD);
@@ -131,6 +133,10 @@ gst_base_ts_mux_pad_reset (GstBaseTsMuxPad * pad)
 
   pad->bitrate = 0;
   pad->max_bitrate = 0;
+
+  pad->subtitling_type = 0x10;
+  pad->composition_page_id = 0x0001;
+  pad->ancillary_page_id = 0x0152;
 }
 
 /* GstAggregatorPad implementation */
@@ -249,6 +255,7 @@ enum
 {
   PROP_0,
   PROP_PROG_MAP,
+  PROP_TS_MODIFICATIONS,
   PROP_PAT_INTERVAL,
   PROP_PMT_INTERVAL,
   PROP_ALIGNMENT,
@@ -257,7 +264,9 @@ enum
   PROP_PCR_INTERVAL,
   PROP_SCTE_35_PID,
   PROP_SCTE_35_NULL_INTERVAL,
-  PROP_ENABLE_CUSTOM_MAPPINGS
+  PROP_ENABLE_CUSTOM_MAPPINGS,
+  PROP_TIMESTAMP_SHIFT,
+  PROP_DVBSUB_READY_WINDOW
 };
 
 #define DEFAULT_SCTE_35_PID 0
@@ -1032,6 +1041,10 @@ gst_base_ts_mux_create_or_update_stream (GstBaseTsMux * mux,
 
   tsmux_stream_set_buffer_release_func (ts_pad->stream, release_buffer_cb);
 
+  ts_pad->stream->subtitling_type = ts_pad->subtitling_type;
+  ts_pad->stream->composition_page_id = ts_pad->composition_page_id;
+  ts_pad->stream->ancillary_page_id = ts_pad->ancillary_page_id;
+
   return GST_FLOW_OK;
 
   /* ERRORS */
@@ -1054,6 +1067,56 @@ is_valid_pmt_pid (guint16 pmt_pid)
   return TRUE;
 }
 
+static void
+modify_dvb_subtitling_pmt_values (GstBaseTsMuxPad * ts_pad,
+    GstStructure * ts_modifications)
+{
+  const gchar *pad_name = GST_PAD_NAME (GST_PAD_CAST (ts_pad));
+  if (gst_structure_has_field (ts_modifications, pad_name)) {
+    const GValue *list = gst_structure_get_value (ts_modifications, pad_name);
+    if (list != NULL) {
+      for (guint i = 0; i < gst_value_list_get_size (list); ++i) {
+        const GValue *value = gst_value_list_get_value (list, i);
+        const GstStructure *mod_struct = gst_value_get_structure (value);
+
+        if (mod_struct == NULL ||
+            !gst_structure_has_name (mod_struct, "dvb_subtitling")) {
+          continue;
+        }
+
+        if (gst_structure_has_field (mod_struct, "subtitling_type")) {
+          guint subtitling_type;
+          gboolean ret = gst_structure_get_uint (mod_struct, "subtitling_type",
+              &subtitling_type);
+          if (ret) {
+            ts_pad->stream->subtitling_type = (guint16) subtitling_type;
+          }
+        }
+
+        if (gst_structure_has_field (mod_struct, "composition_page_id")) {
+          guint composition_page_id;
+          gboolean ret =
+              gst_structure_get_uint (mod_struct, "composition_page_id",
+              &composition_page_id);
+          if (ret) {
+            ts_pad->stream->composition_page_id = (guint16) composition_page_id;
+          }
+        }
+
+        if (gst_structure_has_field (mod_struct, "ancillary_page_id")) {
+          guint ancillary_page_id;
+          gboolean ret =
+              gst_structure_get_uint (mod_struct, "ancillary_page_id",
+              &ancillary_page_id);
+          if (ret) {
+            ts_pad->stream->ancillary_page_id = (guint16) ancillary_page_id;
+          }
+        }
+      }
+    }
+  }
+}
+
 /* Must be called with mux->lock held */
 static GstFlowReturn
 gst_base_ts_mux_create_stream (GstBaseTsMux * mux, GstBaseTsMuxPad * ts_pad,
@@ -1064,6 +1127,10 @@ gst_base_ts_mux_create_stream (GstBaseTsMux * mux, GstBaseTsMuxPad * ts_pad,
   ret = gst_base_ts_mux_create_or_update_stream (mux, ts_pad, caps);
 
   if (ret == GST_FLOW_OK) {
+    if (mux->ts_modifications != NULL) {
+      modify_dvb_subtitling_pmt_values (ts_pad, mux->ts_modifications);
+    }
+
     tsmux_program_add_stream (ts_pad->prog, ts_pad->stream);
   }
 
@@ -2389,6 +2456,89 @@ gst_base_ts_mux_sink_event (GstAggregator * agg, GstAggregatorPad * agg_pad,
         res = TRUE;
         forward = FALSE;
         goto out;
+      } else if (gst_structure_has_name (s, "descriptors")) {
+        res = TRUE;
+        forward = FALSE;
+
+        guint8 subtitling_type = 0;
+        guint16 composition_page_id = 0;
+        guint16 ancillary_page_id = 0;
+
+        const GValue *list = gst_structure_get_value (s, "list");
+        if (list != NULL) {
+          for (guint i = 0; i < gst_value_list_get_size (list); ++i) {
+            const GValue *value = gst_value_list_get_value (list, i);
+            const GstStructure *mod_struct = gst_value_get_structure (value);
+            guint tmp;
+
+            if (mod_struct == NULL ||
+                !gst_structure_has_name (mod_struct, "dvb_subtitling")) {
+              continue;
+            }
+
+            if (gst_structure_has_field (mod_struct, "subtitling_type")) {
+              gboolean ret =
+                  gst_structure_get_uint (mod_struct, "subtitling_type", &tmp);
+              if (ret) {
+                subtitling_type = (guint16) tmp;
+              }
+            }
+
+            if (gst_structure_has_field (mod_struct, "composition_page_id")) {
+              gboolean ret =
+                  gst_structure_get_uint (mod_struct, "composition_page_id",
+                  &tmp);
+              if (ret) {
+                composition_page_id = (guint16) tmp;
+              }
+            }
+
+            if (gst_structure_has_field (mod_struct, "ancillary_page_id")) {
+              gboolean ret =
+                  gst_structure_get_uint (mod_struct, "ancillary_page_id",
+                  &tmp);
+              if (ret) {
+                ancillary_page_id = (guint16) tmp;
+              }
+            }
+          }
+        }
+
+        if (subtitling_type && composition_page_id && ancillary_page_id) {
+          gboolean resend_pmts = FALSE;
+
+          if (ts_pad->stream == NULL) {
+            ts_pad->subtitling_type = subtitling_type;
+            ts_pad->composition_page_id = composition_page_id;
+            ts_pad->ancillary_page_id = ancillary_page_id;
+            break;
+          }
+
+          if (ts_pad->stream->subtitling_type != subtitling_type) {
+            ts_pad->stream->subtitling_type = subtitling_type;
+            resend_pmts = TRUE;
+          }
+          if (ts_pad->stream->composition_page_id != composition_page_id) {
+            ts_pad->stream->composition_page_id = composition_page_id;
+            resend_pmts = TRUE;
+          }
+          if (ts_pad->stream->ancillary_page_id != ancillary_page_id) {
+            ts_pad->stream->ancillary_page_id = ancillary_page_id;
+            resend_pmts = TRUE;
+          }
+
+          if (resend_pmts) {
+            g_mutex_lock (&mux->lock);
+            mux->tsmux->pat_changed = TRUE;
+            mux->tsmux->si_changed = TRUE;
+            tsmux_resend_pat (mux->tsmux);
+            tsmux_resend_si (mux->tsmux);
+            gst_base_ts_mux_resend_all_pmts (mux);
+            g_mutex_unlock (&mux->lock);
+          }
+        }
+
+        goto out;
       }
 
       if (!gst_video_event_is_force_key_unit (event))
@@ -2647,6 +2797,7 @@ static GstBaseTsMuxPad *
 gst_base_ts_mux_find_best_pad (GstAggregator * aggregator,
     GstClockTime * best_time, gboolean timeout)
 {
+  GstBaseTsMux *mux = GST_BASE_TS_MUX (aggregator);
   GstBaseTsMuxPad *best = NULL;
   GstClockTime best_ts = GST_CLOCK_TIME_NONE;
   GList *l;
@@ -2677,6 +2828,18 @@ gst_base_ts_mux_find_best_pad (GstAggregator * aggregator,
       best_ts = ts;
       gst_buffer_unref (buffer);
       break;
+    }
+
+    /* Send DVB Subtitle packets earlier */
+    if (mux->dvbsub_ready_window != 0 && tpad->stream &&
+        tpad->stream->is_dvb_sub) {
+      if (GST_CLOCK_TIME_IS_VALID (best_ts) &&
+          (ts >= best_ts && ts - best_ts <= mux->dvbsub_ready_window)) {
+        best = tpad;
+        best_ts = ts;
+        gst_buffer_unref (buffer);
+        break;
+      }
     }
 
     if (!GST_CLOCK_TIME_IS_VALID (best_ts) || ts < best_ts) {
@@ -2836,6 +2999,10 @@ gst_base_ts_mux_dispose (GObject * object)
     gst_structure_free (mux->prog_map);
     mux->prog_map = NULL;
   }
+  if (mux->ts_modifications) {
+    gst_structure_free (mux->ts_modifications);
+    mux->ts_modifications = NULL;
+  }
   if (mux->programs) {
     g_hash_table_destroy (mux->programs);
     mux->programs = NULL;
@@ -2884,6 +3051,17 @@ gst_base_ts_mux_set_property (GObject * object, guint prop_id,
         mux->prog_map = gst_structure_copy (s);
       else
         mux->prog_map = NULL;
+      break;
+    }
+    case PROP_TS_MODIFICATIONS:{
+      const GstStructure *s = gst_value_get_structure (value);
+      if (mux->ts_modifications) {
+        gst_structure_free (mux->ts_modifications);
+      }
+      if (s)
+        mux->ts_modifications = gst_structure_copy (s);
+      else
+        mux->ts_modifications = NULL;
       break;
     }
     case PROP_PAT_INTERVAL:
@@ -2937,6 +3115,17 @@ gst_base_ts_mux_set_property (GObject * object, guint prop_id,
     case PROP_ENABLE_CUSTOM_MAPPINGS:
       mux->enable_custom_mappings = g_value_get_boolean (value);
       break;
+    case PROP_TIMESTAMP_SHIFT:
+      if (mux->tsmux)
+        mux->timestamp_shift = g_value_get_int64 (value);
+      break;
+    case PROP_DVBSUB_READY_WINDOW:
+      mux->dvbsub_ready_window = g_value_get_uint64 (value);
+      g_mutex_lock (&mux->lock);
+      if (mux->tsmux)
+        tsmux_set_dvbsub_ready_window (mux->tsmux, mux->dvbsub_ready_window);
+      g_mutex_unlock (&mux->lock);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2952,6 +3141,9 @@ gst_base_ts_mux_get_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case PROP_PROG_MAP:
       gst_value_set_structure (value, mux->prog_map);
+      break;
+    case PROP_TS_MODIFICATIONS:
+      gst_value_set_structure (value, mux->ts_modifications);
       break;
     case PROP_PAT_INTERVAL:
       g_value_set_uint (value, mux->pat_interval);
@@ -2980,6 +3172,12 @@ gst_base_ts_mux_get_property (GObject * object, guint prop_id,
     case PROP_ENABLE_CUSTOM_MAPPINGS:
       g_value_set_boolean (value, mux->enable_custom_mappings);
       break;
+    case PROP_TIMESTAMP_SHIFT:
+      g_value_set_int64 (value, mux->tsmux->timestamp_shift);
+      break;
+    case PROP_DVBSUB_READY_WINDOW:
+      g_value_set_uint64 (value, mux->dvbsub_ready_window);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2998,6 +3196,8 @@ gst_base_ts_mux_default_create_ts_mux (GstBaseTsMux * mux)
   tsmux_set_si_interval (tsmux, mux->si_interval);
   tsmux_set_bitrate (tsmux, mux->bitrate);
   tsmux_set_pcr_interval (tsmux, mux->pcr_interval);
+  tsmux_timestamp_shift (tsmux, mux->timestamp_shift);
+  tsmux_set_dvbsub_ready_window (tsmux, mux->dvbsub_ready_window);
 
   return tsmux;
 }
@@ -3082,6 +3282,13 @@ gst_base_ts_mux_class_init (GstBaseTsMuxClass * klass)
           GST_TYPE_STRUCTURE,
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_TS_MODIFICATIONS, g_param_spec_boxed ("ts-modifications",
+          "PSI packets modification map",
+          "A GstStructure specifies which values in PSI packets to replace",
+          GST_TYPE_STRUCTURE,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_PAT_INTERVAL,
       g_param_spec_uint ("pat-interval", "PAT interval",
           "Set the interval (in ticks of the 90kHz clock) for writing out the PAT table",
@@ -3148,6 +3355,21 @@ gst_base_ts_mux_class_init (GstBaseTsMuxClass * klass)
           DEFAULT_ENABLE_CUSTOM_MAPPINGS,
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_TIMESTAMP_SHIFT, g_param_spec_int64 ("timestamp-shift",
+          "Timestamp shift",
+          "Set PTS/DTS and PCR shift (in ticks of the 90kHz clock)",
+          G_MININT64, G_MAXINT64, TIMESTAMP_SHIFT_DEFAULT,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_DVBSUB_READY_WINDOW, g_param_spec_uint64 ("dvbsub-ready-window",
+          "DVB Subtitles scheduling window",
+          "The difference between best available timestamp and DVBSUB packet "
+          "timestamp should be smaller than this value (in ns) to consider "
+          "them ready to be sent (0 = disabled)", 0, G_MAXUINT64, 0,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
   gst_element_class_add_static_pad_template_with_gtype (gstelement_class,
       &gst_base_ts_mux_src_factory, GST_TYPE_AGGREGATOR_PAD);
 
@@ -3165,11 +3387,13 @@ gst_base_ts_mux_init (GstBaseTsMux * mux)
   mux->si_interval = TSMUX_DEFAULT_SI_INTERVAL;
   mux->pcr_interval = TSMUX_DEFAULT_PCR_INTERVAL;
   mux->prog_map = NULL;
+  mux->ts_modifications = NULL;
   mux->alignment = BASETSMUX_DEFAULT_ALIGNMENT;
   mux->bitrate = TSMUX_DEFAULT_BITRATE;
   mux->scte35_pid = DEFAULT_SCTE_35_PID;
   mux->scte35_null_interval = TSMUX_DEFAULT_SCTE_35_NULL_INTERVAL;
   mux->enable_custom_mappings = DEFAULT_ENABLE_CUSTOM_MAPPINGS;
+  mux->timestamp_shift = TIMESTAMP_SHIFT_DEFAULT;
 
   mux->packet_size = GST_BASE_TS_MUX_NORMAL_PACKET_LENGTH;
   mux->automatic_alignment = 0;
