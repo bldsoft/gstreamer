@@ -2128,7 +2128,7 @@ handle_scte35_section (GstBaseTsMux * mux, GstEvent * event,
           if (sevent->program_splice_time_specified)
             sevent->program_splice_time =
                 GSTTIME_TO_MPEGTIME (sevent->program_splice_time) +
-                TS_MUX_CLOCK_BASE;
+                mux->timestamp_shift;
 
           if (sevent->duration_flag)
             sevent->break_duration =
@@ -2165,7 +2165,7 @@ handle_scte35_section (GstBaseTsMux * mux, GstEvent * event,
                   GST_TIME_ARGS (running_time));
               request_keyframe (mux, running_time);
               sevent->program_splice_time =
-                  GSTTIME_TO_MPEGTIME (running_time) + TS_MUX_CLOCK_BASE;
+                  GSTTIME_TO_MPEGTIME (running_time) + mux->timestamp_shift;
             }
           } else {
             GST_DEBUG_OBJECT (mux,
@@ -2242,7 +2242,7 @@ handle_scte35_section (GstBaseTsMux * mux, GstEvent * event,
             g_assert (translate);
             running_time = sit->splice_time;
             sit->splice_time =
-                GSTTIME_TO_MPEGTIME (running_time) + TS_MUX_CLOCK_BASE;
+                GSTTIME_TO_MPEGTIME (running_time) + mux->timestamp_shift;
             if (do_request_keyframes) {
               GST_DEBUG_OBJECT (mux,
                   "Requesting keyframe for time signal at %" GST_TIME_FORMAT,
@@ -2279,7 +2279,7 @@ handle_scte35_section (GstBaseTsMux * mux, GstEvent * event,
      *   and the GStreamer PTS output by tsdemux
      * - Our own 1-hour offset
      */
-    pts_adjust = sit->pts_adjustment + mpeg_pts_offset + TS_MUX_CLOCK_BASE;
+    pts_adjust = sit->pts_adjustment + mpeg_pts_offset + mux->timestamp_shift;
 
     /* Account for offsets potentially introduced between the demuxer and us */
     pts_adjust +=
