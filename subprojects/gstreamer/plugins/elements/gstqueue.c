@@ -1186,18 +1186,24 @@ out_flushing:
 static gboolean
 gst_queue_is_empty (GstQueue * queue)
 {
+  GstQueueItem *head;
   GstQueueItem *tail;
 
+  head = gst_vec_deque_peek_head_struct (queue->queue);
   tail = gst_vec_deque_peek_tail_struct (queue->queue);
 
   if (tail == NULL)
     return TRUE;
 
   /* Only consider the queue empty if the minimum thresholds
-   * are not reached and data is at the queue tail. Otherwise
-   * we would block forever on serialized queries.
+   * are not reached and data is at the queue head and tail. Otherwise
+   * we would block forever on serialized queries. And its not clear
+   * how serialized events should be handled they are at the head.
    */
-  if (!GST_IS_BUFFER (tail->item) && !GST_IS_BUFFER_LIST (tail->item))
+
+  if ((!GST_IS_BUFFER (tail->item) && !GST_IS_BUFFER_LIST (tail->item) &&
+          !GST_IS_EVENT (tail->item)) ||
+      (!GST_IS_BUFFER (head->item) && !GST_IS_BUFFER_LIST (head->item)))
     return FALSE;
 
   /* It is possible that a max size is reached before all min thresholds are.

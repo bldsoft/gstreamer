@@ -938,6 +938,58 @@ GST_START_TEST (test_serialized_query_with_threshold)
 
 GST_END_TEST;
 
+GST_START_TEST (test_serialized_event_with_threshold)
+{
+  GstEvent *event;
+  GstSegment segment;
+
+  gst_segment_init (&segment, GST_FORMAT_BYTES);
+
+  mysinkpad = gst_check_setup_sink_pad (queue, &sinktemplate);
+  gst_pad_set_event_function (mysinkpad, event_func);
+  gst_pad_set_active (mysinkpad, TRUE);
+
+  g_object_set (queue, "min-threshold-buffers", 5, NULL);
+
+  fail_unless (gst_element_set_state (queue,
+          GST_STATE_PLAYING) == GST_STATE_CHANGE_SUCCESS,
+      "could not set to playing");
+
+  gst_pad_push_event (mysrcpad, gst_event_new_stream_start ("test"));
+  gst_pad_push_event (mysrcpad, gst_event_new_segment (&segment));
+
+  for (int i = 0; i < 4; i++) {
+    gst_pad_push (mysrcpad, gst_buffer_new ());
+  }
+
+  fail_unless_equals_int (g_list_length (buffers), 0)
+      fail_unless_equals_int (g_list_length (events), 0)
+      event = gst_event_new_stream_start ("test");
+  gst_pad_push_event (mysrcpad, event);
+
+  // ensure min-threshold is respected
+  g_usleep (10000);
+  fail_unless_equals_int (g_list_length (buffers), 0)
+      // we should have received the initial stream-start event but not the
+      // one created after we enqueued buffers
+      fail_unless_equals_int (g_list_length (events), 2)
+      // now push a new buffers and ensure previous buffers and events are pushed
+      for (int i = 0; i < 4; i++) {
+    gst_pad_push (mysrcpad, gst_buffer_new ());
+  }
+
+  while (g_list_length (buffers) < 4) {
+    g_usleep (1000);
+  }
+
+  fail_unless_equals_int (g_list_length (buffers), 4)
+      fail_unless_equals_int (g_list_length (events), 3)
+      fail_unless (gst_element_set_state (queue,
+          GST_STATE_NULL) == GST_STATE_CHANGE_SUCCESS, "could not set to null");
+}
+
+GST_END_TEST;
+
 
 static gpointer
 push_event_thread_func (gpointer data)
@@ -1397,6 +1449,7 @@ queue_suite (void)
   tcase_add_test (tc_chain, test_time_level_task_not_started);
   tcase_add_test (tc_chain, test_queries_while_flushing);
   tcase_add_test (tc_chain, test_serialized_query_with_threshold);
+  tcase_add_test (tc_chain, test_serialized_event_with_threshold);
   tcase_add_test (tc_chain, test_state_change_when_flushing);
 #if 0
   tcase_add_test (tc_chain, test_newsegment);
