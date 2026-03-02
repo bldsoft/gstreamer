@@ -1208,7 +1208,7 @@ handle_psi (MpegTSBase * base, GstMpegtsSection * section)
       GstStructure *descriptors = NULL;
       GstStructure *descriptor_struct = NULL;
 
-      if (!demux->program) {
+      if (G_UNLIKELY ((pmt == NULL || demux->program == NULL))) {
         return;
       }
 
