@@ -311,20 +311,26 @@ plugin_init (GstPlugin * plugin)
         }
       }
 #endif
-      cdata = gst_nv_h264_encoder_register_cuda (plugin,
-          context, GST_RANK_PRIMARY + 1);
-      if (cdata)
-        h264_enc_cdata = g_list_append (h264_enc_cdata, cdata);
+      if (!g_getenv ("GST_DISABLE_NV_H264_ENCODER")) {
+        cdata = gst_nv_h264_encoder_register_cuda (plugin,
+            context, GST_RANK_PRIMARY + 1);
+        if (cdata)
+          h264_enc_cdata = g_list_append (h264_enc_cdata, cdata);
+      }
 
-      cdata = gst_nv_h265_encoder_register_cuda (plugin,
-          context, GST_RANK_PRIMARY + 1);
-      if (cdata)
-        h265_enc_cdata = g_list_append (h265_enc_cdata, cdata);
+      if (!g_getenv ("GST_DISABLE_NV_H265_ENCODER")) {
+        cdata = gst_nv_h265_encoder_register_cuda (plugin,
+            context, GST_RANK_PRIMARY + 1);
+        if (cdata)
+          h265_enc_cdata = g_list_append (h265_enc_cdata, cdata);
+      }
 
-      cdata = gst_nv_av1_encoder_register_cuda (plugin,
-          context, GST_RANK_PRIMARY + 1);
-      if (cdata)
-        av1_enc_cdata = g_list_append (av1_enc_cdata, cdata);
+      if (!g_getenv ("GST_DISABLE_NV_AV1_ENCODER")) {
+        cdata = gst_nv_av1_encoder_register_cuda (plugin,
+            context, GST_RANK_PRIMARY + 1);
+        if (cdata)
+          av1_enc_cdata = g_list_append (av1_enc_cdata, cdata);
+      }
     }
 
     gst_nv_jpeg_enc_register (plugin, context, GST_RANK_NONE, have_nvrtc);
