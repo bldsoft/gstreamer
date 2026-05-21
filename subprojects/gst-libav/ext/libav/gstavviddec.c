@@ -590,7 +590,7 @@ gst_ffmpegviddec_set_format (GstVideoDecoder * decoder,
     ffmpegdec->pic_par_d = 0;
     ffmpegdec->pic_interlaced = 0;
     ffmpegdec->pic_field_order = 0;
-    ffmpegdec->pic_interlaced_mixed = FALSE;
+    ffmpegdec->pic_field_order_changed = FALSE;
     ffmpegdec->ctx_ticks = 0;
     ffmpegdec->ctx_time_n = 0;
     ffmpegdec->ctx_time_d = 0;
@@ -792,31 +792,18 @@ typedef struct
   AVBufferRef *avbuffer;
 } GstFFMpegVidDecVideoFrame;
 
-typedef struct
-{
-  guint refcount;
-} GstFFMpegVidDecCodecFrameData;
-
 static GstFFMpegVidDecVideoFrame *
 gst_ffmpegviddec_video_frame_new (GstFFMpegVidDec * ffmpegdec,
     GstVideoCodecFrame * frame)
 {
   GstFFMpegVidDecVideoFrame *dframe;
-  GstFFMpegVidDecCodecFrameData *data;
 
   dframe = g_new0 (GstFFMpegVidDecVideoFrame, 1);
   dframe->ffmpegdec = ffmpegdec;
   dframe->frame = frame;
 
-  data = gst_video_codec_frame_get_user_data (frame);
-  if (data == NULL) {
-    data = g_new0 (GstFFMpegVidDecCodecFrameData, 1);
-    gst_video_codec_frame_set_user_data (frame, data, g_free);
-  }
-  data->refcount++;
-
-  GST_DEBUG_OBJECT (ffmpegdec, "new video frame %p for sfn # %d ref %u",
-      dframe, frame->system_frame_number, data->refcount);
+  GST_DEBUG_OBJECT (ffmpegdec, "new video frame %p for sfn # %d", dframe,
+      frame->system_frame_number);
 
   return dframe;
 }
@@ -825,29 +812,18 @@ static void
 gst_ffmpegviddec_video_frame_free (GstFFMpegVidDec * ffmpegdec,
     GstFFMpegVidDecVideoFrame * frame)
 {
-  GstFFMpegVidDecCodecFrameData *data;
-
-  data = gst_video_codec_frame_get_user_data (frame->frame);
-
-  GST_DEBUG_OBJECT (ffmpegdec, "free video frame %p for sfn # %d ref %u",
-      frame, frame->frame->system_frame_number, data->refcount);
+  GST_DEBUG_OBJECT (ffmpegdec, "free video frame %p for sfn # %d", frame,
+      frame->frame->system_frame_number);
 
   if (frame->mapped)
     gst_video_frame_unmap (&frame->vframe);
-
-  data->refcount--;
-  if (data->refcount == 0) {
-    GST_VIDEO_CODEC_FRAME_FLAG_UNSET (frame->frame,
-        GST_FFMPEG_VIDEO_CODEC_FRAME_FLAG_ALLOCATED);
-    gst_video_decoder_release_frame (GST_VIDEO_DECODER (ffmpegdec),
-        frame->frame);
-  }
-
+  GST_VIDEO_CODEC_FRAME_FLAG_UNSET (frame->frame,
+      GST_FFMPEG_VIDEO_CODEC_FRAME_FLAG_ALLOCATED);
+  gst_video_decoder_release_frame (GST_VIDEO_DECODER (ffmpegdec), frame->frame);
   gst_buffer_replace (&frame->buffer, NULL);
   if (frame->avbuffer) {
     av_buffer_unref (&frame->avbuffer);
   }
-
   g_free (frame);
 }
 
@@ -1200,16 +1176,15 @@ static gboolean
 picture_changed (GstFFMpegVidDec * ffmpegdec, AVFrame * picture,
     gboolean one_field)
 {
-#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
-  const gint pic_interlaced = picture->flags & AV_FRAME_FLAG_INTERLACED;
-#else
-  const gint pic_interlaced = picture->interlaced_frame;
-#endif
   gint pic_field_order = 0;
 
   if (one_field) {
     pic_field_order = ffmpegdec->pic_field_order;
-  } else if (pic_interlaced) {
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
+  } else if (picture->flags & AV_FRAME_FLAG_INTERLACED) {
+#else
+  } else if (picture->interlaced_frame) {
+#endif
     if (picture->repeat_pict)
       pic_field_order |= GST_VIDEO_BUFFER_FLAG_RFF;
 #if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
@@ -1225,10 +1200,13 @@ picture_changed (GstFFMpegVidDec * ffmpegdec, AVFrame * picture,
       && ffmpegdec->pic_pix_fmt == picture->format
       && ffmpegdec->pic_par_n == picture->sample_aspect_ratio.num
       && ffmpegdec->pic_par_d == picture->sample_aspect_ratio.den
-      && (ffmpegdec->pic_interlaced_mixed
-          || ffmpegdec->pic_interlaced == pic_interlaced)
-      && (ffmpegdec->pic_interlaced_mixed
-          || ffmpegdec->pic_field_order == pic_field_order)
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
+      && ffmpegdec->pic_interlaced ==
+      (picture->flags & AV_FRAME_FLAG_INTERLACED)
+#else
+      && ffmpegdec->pic_interlaced == picture->interlaced_frame
+#endif
+      && ffmpegdec->pic_field_order == pic_field_order
       && ffmpegdec->cur_multiview_mode == ffmpegdec->picture_multiview_mode
       && ffmpegdec->cur_multiview_flags == ffmpegdec->picture_multiview_flags);
 }
@@ -1239,8 +1217,9 @@ context_changed (GstFFMpegVidDec * ffmpegdec, AVCodecContext * context)
 #if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
   const gint ticks_per_frame =
       (GST_VIDEO_INFO_IS_INTERLACED (&ffmpegdec->input_state->info)
-      && context->codec_descriptor
-      && context->codec_descriptor->props & AV_CODEC_PROP_FIELDS) ? 2 : 1;
+      && ffmpegdec->context->codec_descriptor
+      && ffmpegdec->context->
+      codec_descriptor->props & AV_CODEC_PROP_FIELDS) ? 2 : 1;
 #else
   const gint ticks_per_frame = context->ticks_per_frame;
 #endif
@@ -1253,22 +1232,13 @@ static gboolean
 update_video_context (GstFFMpegVidDec * ffmpegdec, AVCodecContext * context,
     AVFrame * picture, gboolean one_field)
 {
-#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
-  const gint ticks_per_frame =
-      (GST_VIDEO_INFO_IS_INTERLACED (&ffmpegdec->input_state->info)
-      && context->codec_descriptor
-      && context->codec_descriptor->props & AV_CODEC_PROP_FIELDS) ? 2 : 1;
-#else
-  const gint ticks_per_frame = context->ticks_per_frame;
-#endif
-#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
-  const gint pic_interlaced = picture->flags & AV_FRAME_FLAG_INTERLACED;
-#else
-  const gint pic_interlaced = picture->interlaced_frame;
-#endif
   gint pic_field_order = 0;
 
-  if (pic_interlaced) {
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
+  if (picture->flags & AV_FRAME_FLAG_INTERLACED) {
+#else
+  if (picture->interlaced_frame) {
+#endif
     if (picture->repeat_pict)
       pic_field_order |= GST_VIDEO_BUFFER_FLAG_RFF;
 #if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
@@ -1284,22 +1254,15 @@ update_video_context (GstFFMpegVidDec * ffmpegdec, AVCodecContext * context,
     return FALSE;
 
   GST_DEBUG_OBJECT (ffmpegdec,
-      "Renegotiating video from "
-      "%dx%d PAR %d:%d, %d/%d fps; pixfmt %d T %d IL %d:%d MV %d:%d"
-      " to "
-      "%dx%d PAR %d:%d, %d/%d fps; pixfmt %d T %d IL %d:%d MV %d:%d",
+      "Renegotiating video from %dx%d@ %d:%d PAR %d/%d fps pixfmt %d to %dx%d@ %d:%d PAR %d/%d fps pixfmt %d",
       ffmpegdec->pic_width, ffmpegdec->pic_height,
       ffmpegdec->pic_par_n, ffmpegdec->pic_par_d,
       ffmpegdec->ctx_time_n, ffmpegdec->ctx_time_d,
-      ffmpegdec->pic_pix_fmt, ffmpegdec->ctx_ticks,
-      ffmpegdec->pic_interlaced, ffmpegdec->pic_field_order,
-      ffmpegdec->cur_multiview_mode, ffmpegdec->cur_multiview_flags,
+      ffmpegdec->pic_pix_fmt,
       picture->width, picture->height,
-      picture->sample_aspect_ratio.num, picture->sample_aspect_ratio.den,
-      context->time_base.num, context->time_base.den,
-      picture->format, ticks_per_frame,
-      pic_interlaced, pic_field_order,
-      ffmpegdec->picture_multiview_mode, ffmpegdec->picture_multiview_flags);
+      picture->sample_aspect_ratio.num,
+      picture->sample_aspect_ratio.den,
+      context->time_base.num, context->time_base.den, picture->format);
 
   ffmpegdec->pic_pix_fmt = picture->format;
   ffmpegdec->pic_width = picture->width;
@@ -1310,23 +1273,32 @@ update_video_context (GstFFMpegVidDec * ffmpegdec, AVCodecContext * context,
   ffmpegdec->cur_multiview_flags = ffmpegdec->picture_multiview_flags;
 
   /* Remember if we have interlaced content and the field order changed
-   * at least once, or we became progressive. If that happens, we must be
-   * interlace-mode=mixed
+   * at least once. If that happens, we must be interlace-mode=mixed
    */
-  if (ffmpegdec->pic_interlaced) {
-    if (ffmpegdec->pic_field_order != pic_field_order)
-      ffmpegdec->pic_interlaced_mixed = TRUE;
-    if (!pic_interlaced)
-      ffmpegdec->pic_interlaced_mixed = TRUE;
-  }
-
-  /* Telecine output also required mixed mode */
-  if (pic_field_order & GST_VIDEO_BUFFER_FLAG_RFF)
-    ffmpegdec->pic_interlaced_mixed = TRUE;
+  if (ffmpegdec->pic_field_order_changed ||
+      (ffmpegdec->pic_field_order != pic_field_order &&
+          ffmpegdec->pic_interlaced))
+    ffmpegdec->pic_field_order_changed = TRUE;
 
   ffmpegdec->pic_field_order = pic_field_order;
-  ffmpegdec->pic_interlaced = pic_interlaced;
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
+  ffmpegdec->pic_interlaced = picture->flags & AV_FRAME_FLAG_INTERLACED;
+#else
+  ffmpegdec->pic_interlaced = picture->interlaced_frame;
+#endif
 
+  if (!ffmpegdec->pic_interlaced)
+    ffmpegdec->pic_field_order_changed = FALSE;
+
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
+  const gint ticks_per_frame =
+      (GST_VIDEO_INFO_IS_INTERLACED (&ffmpegdec->input_state->info)
+      && ffmpegdec->context->codec_descriptor
+      && ffmpegdec->context->
+      codec_descriptor->props & AV_CODEC_PROP_FIELDS) ? 2 : 1;
+#else
+  const gint ticks_per_frame = context->ticks_per_frame;
+#endif
   ffmpegdec->ctx_ticks = ticks_per_frame;
   ffmpegdec->ctx_time_n = context->time_base.num;
   ffmpegdec->ctx_time_d = context->time_base.den;
@@ -1538,10 +1510,13 @@ gst_ffmpegviddec_negotiate (GstFFMpegVidDec * ffmpegdec,
     interlace_mode = GST_VIDEO_INTERLACE_MODE_ALTERNATE;
     caps_height = 2 * caps_height;
   } else if (!gst_structure_has_field (in_s, "interlace-mode")) {
-    if (ffmpegdec->pic_interlaced_mixed)
-      interlace_mode = GST_VIDEO_INTERLACE_MODE_MIXED;
-    else if (ffmpegdec->pic_interlaced) {
-      interlace_mode = GST_VIDEO_INTERLACE_MODE_INTERLEAVED;
+    if (ffmpegdec->pic_interlaced) {
+      if (ffmpegdec->pic_field_order_changed ||
+          (ffmpegdec->pic_field_order & GST_VIDEO_BUFFER_FLAG_RFF)) {
+        interlace_mode = GST_VIDEO_INTERLACE_MODE_MIXED;
+      } else {
+        interlace_mode = GST_VIDEO_INTERLACE_MODE_INTERLEAVED;
+      }
     } else {
       interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
     }
@@ -1569,13 +1544,16 @@ gst_ffmpegviddec_negotiate (GstFFMpegVidDec * ffmpegdec,
   in_info = &ffmpegdec->input_state->info;
   out_info = &ffmpegdec->output_state->info;
 
-  GST_VIDEO_INFO_INTERLACE_MODE (out_info) = interlace_mode;
-  if (interlace_mode == GST_VIDEO_INTERLACE_MODE_INTERLEAVED &&
-      !gst_structure_has_field (in_s, "field-order"))
-    GST_VIDEO_INFO_FIELD_ORDER (out_info) =
-        (ffmpegdec->pic_field_order & GST_VIDEO_BUFFER_FLAG_TFF)
-        ? GST_VIDEO_FIELD_ORDER_TOP_FIELD_FIRST
-        : GST_VIDEO_FIELD_ORDER_BOTTOM_FIELD_FIRST;
+  out_info->interlace_mode = interlace_mode;
+  if (!gst_structure_has_field (in_s, "interlace-mode")
+      && interlace_mode == GST_VIDEO_INTERLACE_MODE_INTERLEAVED) {
+    if ((ffmpegdec->pic_field_order & GST_VIDEO_BUFFER_FLAG_TFF))
+      GST_VIDEO_INFO_FIELD_ORDER (out_info) =
+          GST_VIDEO_FIELD_ORDER_TOP_FIELD_FIRST;
+    else
+      GST_VIDEO_INFO_FIELD_ORDER (out_info) =
+          GST_VIDEO_FIELD_ORDER_BOTTOM_FIELD_FIRST;
+  }
 
   if (!gst_structure_has_field (in_s, "chroma-site")) {
     switch (context->chroma_sample_location) {
@@ -1762,7 +1740,7 @@ negotiate_failed:
     ffmpegdec->pic_par_d = 0;
     ffmpegdec->pic_interlaced = 0;
     ffmpegdec->pic_field_order = 0;
-    ffmpegdec->pic_interlaced_mixed = FALSE;
+    ffmpegdec->pic_field_order_changed = FALSE;
     ffmpegdec->ctx_ticks = 0;
     ffmpegdec->ctx_time_n = 0;
     ffmpegdec->ctx_time_d = 0;
@@ -1999,9 +1977,6 @@ gst_ffmpegviddec_video_frame (GstFFMpegVidDec * ffmpegdec,
   g_assert (out_dframe);
   output_frame = gst_video_codec_frame_ref (out_dframe->frame);
 #endif
-
-  GST_LOG_OBJECT (ffmpegdec, "Got frame from ffmpeg, sfn # %"
-      G_GUINT32_FORMAT, output_frame->system_frame_number);
 
   /* also give back a buffer allocated by the frame, if any */
   if (out_dframe) {
@@ -2490,7 +2465,7 @@ gst_ffmpegviddec_stop (GstVideoDecoder * decoder)
   ffmpegdec->pic_par_d = 0;
   ffmpegdec->pic_interlaced = 0;
   ffmpegdec->pic_field_order = 0;
-  ffmpegdec->pic_interlaced_mixed = FALSE;
+  ffmpegdec->pic_field_order_changed = FALSE;
   ffmpegdec->ctx_ticks = 0;
   ffmpegdec->ctx_time_n = 0;
   ffmpegdec->ctx_time_d = 0;
