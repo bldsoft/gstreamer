@@ -47,7 +47,9 @@ G_BEGIN_DECLS
  *
  * Since: 1.16
  */
-typedef struct {
+typedef struct _GstAudioBuffer GstAudioBuffer;
+
+struct _GstAudioBuffer {
   GstAudioInfo info;
 
   gsize        n_samples;
@@ -62,7 +64,7 @@ typedef struct {
   GstMapInfo   priv_map_infos_arr[8];
 
   gpointer     _gst_reserved[GST_PADDING];
-} GstAudioBuffer;
+};
 
 
 GST_AUDIO_API

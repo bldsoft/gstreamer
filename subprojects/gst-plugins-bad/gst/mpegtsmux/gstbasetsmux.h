@@ -131,6 +131,11 @@ struct _GstBaseTsMuxPad
   gint bitrate;
   gint max_bitrate;
   gint stream_number;
+
+  /* DVB Subtitles */
+  guint8 subtitling_type;
+  guint16 composition_page_id;
+  guint16 ancillary_page_id;
 };
 
 struct _GstBaseTsMuxPadClass
@@ -155,6 +160,7 @@ struct GstBaseTsMux {
 
   /* properties */
   GstStructure *prog_map;
+  GstStructure *ts_modifications;
   guint pat_interval;
   guint pmt_interval;
   gint alignment;
@@ -165,6 +171,8 @@ struct GstBaseTsMux {
   guint scte35_null_interval;
   guint32 last_scte35_event_seqnum;
   gboolean enable_custom_mappings;
+  guint64 timestamp_shift;
+  guint64 dvbsub_ready_window;
 
   /* state */
   gboolean first;

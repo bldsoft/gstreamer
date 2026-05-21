@@ -129,6 +129,7 @@ enum
   /* h265 specific */
   PROP_AUD,
   PROP_REPEAT_SEQUENCE_HEADER,
+  PROP_FILLER_DATA,
 };
 
 #define DEFAULT_PRESET            GST_NV_ENCODER_PRESET_DEFAULT
@@ -154,6 +155,7 @@ enum
 #define DEFAULT_CONST_QUALITY     0
 #define DEFAULT_AUD               TRUE
 #define DEFAULT_REPEAT_SEQUENCE_HEADER FALSE
+#define DEFAULT_FILLER_DATA       FALSE
 
 typedef enum
 {
@@ -219,6 +221,7 @@ typedef struct _GstNvH265Encoder
 
   gboolean aud;
   gboolean repeat_sequence_header;
+  gboolean filler_data;
 } GstNvH265Encoder;
 
 typedef struct _GstNvH265EncoderClass
@@ -602,6 +605,11 @@ gst_nv_h265_encoder_class_init (GstNvH265EncoderClass * klass, gpointer data)
           "Insert sequence headers (SPS/PPS) per IDR, "
           "ignored if negotiated stream-format is \"hvc1\"",
           DEFAULT_REPEAT_SEQUENCE_HEADER, param_flags));
+  g_object_class_install_property (object_class, PROP_FILLER_DATA,
+      g_param_spec_boolean ("filler-data", "Filler Data",
+          "Enable insertion of filler data in the bitstream "
+          "(effective only with CBR rate control and known framerate)",
+          DEFAULT_FILLER_DATA, param_flags));
 
   GstPadTemplate *pad_templ = gst_pad_template_new ("sink",
       GST_PAD_SINK, GST_PAD_ALWAYS, cdata->sink_caps);
@@ -1006,6 +1014,9 @@ gst_nv_h265_encoder_set_property (GObject * object, guint prop_id,
       update_boolean (self,
           &self->repeat_sequence_header, value, UPDATE_INIT_PARAM);
       break;
+    case PROP_FILLER_DATA:
+      update_boolean (self, &self->filler_data, value, UPDATE_INIT_PARAM);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1128,6 +1139,9 @@ gst_nv_h265_encoder_get_property (GObject * object, guint prop_id,
       break;
     case PROP_REPEAT_SEQUENCE_HEADER:
       g_value_set_boolean (value, self->repeat_sequence_header);
+      break;
+    case PROP_FILLER_DATA:
+      g_value_set_boolean (value, self->filler_data);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1597,6 +1611,7 @@ gst_nv_h265_encoder_set_format (GstNvEncoder * encoder,
   hevc_config->pixelBitDepthMinus8 = bitdepth_minus8;
   hevc_config->idrPeriod = config->gopLength;
   hevc_config->outputAUD = self->aud;
+  hevc_config->enableFillerDataInsertion = self->filler_data;
   if (self->stream_format == GST_NV_H265_ENCODER_HVC1) {
     hevc_config->disableSPSPPS = 1;
     hevc_config->repeatSPSPPS = 0;
