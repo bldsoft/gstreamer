@@ -3964,7 +3964,8 @@ gst_ts_demux_handle_packet (GstTSDemux * demux, TSDemuxStream * stream,
     if (((stream->continuity_counter + 1) % 16) != cc) {
       if (stream->state != PENDING_PACKET_EMPTY) {
 #ifndef GST_DISABLE_GST_DEBUG
-        gchar *pad_name = gst_pad_get_name (stream->pad);
+        gchar *pad_name =
+            stream->pad ? gst_pad_get_name (stream->pad) : g_strdup ("NULL");
         GST_ELEMENT_WARNING_WITH_DETAILS (demux, STREAM, DEMUX,
             ("CONTINUITY: Mismatch packet %d, stream %d (pid 0x%04x)", cc,
                 stream->continuity_counter, stream->stream.pid),
