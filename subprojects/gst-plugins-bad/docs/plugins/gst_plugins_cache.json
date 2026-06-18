@@ -225298,6 +225298,18 @@
                         "type": "gboolean",
                         "writable": true
                     },
+                    "ignore-continuity-counter": {
+                        "blurb": "Ignore mismatched stream continuity counters in badly constructed streams",
+                        "conditionally-available": false,
+                        "construct": false,
+                        "construct-only": false,
+                        "controllable": false,
+                        "default": "false",
+                        "mutable": "playing",
+                        "readable": true,
+                        "type": "gboolean",
+                        "writable": true
+                    },
                     "latency": {
                         "blurb": "Latency to add for smooth demuxing (in ms)",
                         "conditionally-available": false,

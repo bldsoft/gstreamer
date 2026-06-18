@@ -298,6 +298,7 @@ enum
   PROP_LATENCY,
   PROP_SEND_SCTE35_EVENTS,
   PROP_SEND_DESCRIPTORS,
+  PROP_IGNORE_CONTINUITY_COUNTER,
   /* FILL ME */
 };
 
@@ -426,6 +427,28 @@ gst_ts_demux_class_init (GstTSDemuxClass * klass)
           G_MAXINT, DEFAULT_LATENCY,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * tsdemux:ignore-continuity-counter:
+   *
+   * Ignoring discontinuities in the stream continuity counters
+   *
+   * Some streams (HLS) are poorly generated and reset the continuity
+   * counter at fragment boundaries when there is no packet loss. The
+   * only way to handle those streams properly is to ignore the mismatch
+   * by setting this property to TRUE. In general, this property should
+   * not be otherwise used.
+   *
+   * Since: 1.30
+   */
+  g_object_class_install_property (gobject_class,
+      PROP_IGNORE_CONTINUITY_COUNTER,
+      g_param_spec_boolean ("ignore-continuity-counter",
+          "Ignore continuity counter",
+          "Ignore mismatched stream continuity counters in badly constructed streams",
+          FALSE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_PLAYING));
+
   element_class = GST_ELEMENT_CLASS (klass);
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&video_template));
@@ -494,6 +517,8 @@ gst_ts_demux_init (GstTSDemux * demux)
 {
   MpegTSBase *base = (MpegTSBase *) demux;
 
+  demux->ignore_continuity_counter = FALSE;
+
   base->stream_size = sizeof (TSDemuxStream);
   base->parse_private_sections = TRUE;
   /* We are not interested in sections (all handled by mpegtsbase) */
@@ -533,6 +558,12 @@ gst_ts_demux_set_property (GObject * object, guint prop_id,
     case PROP_LATENCY:
       demux->latency = g_value_get_int (value);
       break;
+    case PROP_IGNORE_CONTINUITY_COUNTER:{
+      MpegTSBase *base = (MpegTSBase *) demux;
+      base->packetizer->ignore_continuity_counter =
+          demux->ignore_continuity_counter = g_value_get_boolean (value);
+      break;
+    }
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
   }
@@ -559,6 +590,9 @@ gst_ts_demux_get_property (GObject * object, guint prop_id,
       break;
     case PROP_LATENCY:
       g_value_set_int (value, demux->latency);
+      break;
+    case PROP_IGNORE_CONTINUITY_COUNTER:
+      g_value_set_boolean (value, demux->ignore_continuity_counter);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -3960,7 +3994,8 @@ gst_ts_demux_handle_packet (GstTSDemux * demux, TSDemuxStream * stream,
       packet->scram_afc_cc & 0x30, cc, packet->payload);
 
   /* Check continuity */
-  if (stream->continuity_counter != CONTINUITY_UNSET) {
+  if (!demux->ignore_continuity_counter
+      && stream->continuity_counter != CONTINUITY_UNSET) {
     if (((stream->continuity_counter + 1) % 16) != cc) {
       if (stream->state != PENDING_PACKET_EMPTY) {
 #ifndef GST_DISABLE_GST_DEBUG
