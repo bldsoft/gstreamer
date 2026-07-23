@@ -65,6 +65,7 @@ GST_DEBUG_CATEGORY (gst_hls_demux_debug);
 enum
 {
   PROP_0,
+  PROP_MIN_LIVE_FRAGMENT_DISTANCE,
   PROP_GSTHLSDEMUX_C_PATCH_VERSION,
   PROP_M3U8_H_PATCH_VERSION,
   PROP_M3U8_C_PATCH_VERSION
@@ -127,6 +128,8 @@ static void gst_hls_demux_set_current_variant (GstHLSDemux * hlsdemux,
     GstHLSVariantStream * variant);
 static void gst_hls_demux_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * spec);
+static void gst_hls_demux_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * spec);
 
 #define gst_hls_demux_parent_class parent_class
 G_DEFINE_TYPE (GstHLSDemux, gst_hls_demux, GST_TYPE_ADAPTIVE_DEMUX);
@@ -163,6 +166,7 @@ gst_hls_demux_class_init (GstHLSDemuxClass * klass)
 
   gobject_class->finalize = gst_hls_demux_finalize;
   gobject_class->get_property = gst_hls_demux_get_property;
+  gobject_class->set_property = gst_hls_demux_set_property;
 
   element_class->change_state = GST_DEBUG_FUNCPTR (gst_hls_demux_change_state);
 
@@ -202,6 +206,15 @@ gst_hls_demux_class_init (GstHLSDemuxClass * klass)
       "hlsdemux element");
 
   g_object_class_install_property (gobject_class,
+      PROP_MIN_LIVE_FRAGMENT_DISTANCE,
+      g_param_spec_int ("min-live-fragment-distance",
+          "Min live fragment distance",
+          "How far from the live edge to start playback, in fragments; "
+          "1 means start at the very last (live-edge) fragment",
+          1, G_MAXINT, GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class,
       PROP_GSTHLSDEMUX_C_PATCH_VERSION,
       g_param_spec_uint ("gsthlsdemux-c-patch-version",
           "Vesion of patch for gsthlsdemux.c file",
@@ -233,6 +246,8 @@ gst_hls_demux_init (GstHLSDemux * demux)
 
   demux->keys = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
   g_mutex_init (&demux->keys_lock);
+
+  demux->min_live_fragment_distance = GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE;
 }
 
 static GstStateChangeReturn
@@ -1623,6 +1638,10 @@ gst_hls_demux_update_rendition_manifest (GstHLSDemux * demux,
     return FALSE;
   }
 
+  /* apply configured live start distance before update */
+  gst_m3u8_set_min_live_fragment_distance (m3u8,
+      demux->min_live_fragment_distance);
+
   if (!gst_m3u8_update (m3u8, playlist)) {
     GST_WARNING_OBJECT (demux, "Couldn't update playlist");
     g_set_error (err, GST_STREAM_ERROR, GST_STREAM_ERROR_FAILED,
@@ -1756,6 +1775,10 @@ retry:
         "Couldn't validate playlist encoding");
     return FALSE;
   }
+
+  /* apply configured live start distance before update */
+  gst_m3u8_set_min_live_fragment_distance (m3u8,
+      demux->min_live_fragment_distance);
 
   if (!gst_m3u8_update (m3u8, playlist)) {
     GST_WARNING_OBJECT (demux, "Couldn't update playlist");
@@ -2202,7 +2225,12 @@ static void
 gst_hls_demux_get_property (GObject * object, guint prop_id, GValue * value,
     GParamSpec * spec)
 {
+  GstHLSDemux *demux = GST_HLS_DEMUX (object);
+
   switch (prop_id) {
+    case PROP_MIN_LIVE_FRAGMENT_DISTANCE:
+      g_value_set_int (value, demux->min_live_fragment_distance);
+      break;
     case PROP_GSTHLSDEMUX_C_PATCH_VERSION:
       g_value_set_uint (value, RIXJOB_GSTHLSDEMUX_C_PATCH_VERSION);
       break;
@@ -2211,6 +2239,22 @@ gst_hls_demux_get_property (GObject * object, guint prop_id, GValue * value,
       break;
     case PROP_M3U8_C_PATCH_VERSION:
       g_value_set_uint (value, RIXJOB_M3U8_C_PATCH_VERSION);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, spec);
+      break;
+  }
+}
+
+static void
+gst_hls_demux_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * spec)
+{
+  GstHLSDemux *demux = GST_HLS_DEMUX (object);
+
+  switch (prop_id) {
+    case PROP_MIN_LIVE_FRAGMENT_DISTANCE:
+      demux->min_live_fragment_distance = g_value_get_int (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, spec);

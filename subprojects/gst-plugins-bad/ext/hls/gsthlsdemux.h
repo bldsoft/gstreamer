@@ -153,6 +153,8 @@ struct _GstHLSDemux
   GstHLSVariantStream  *previous_variant;
 
   gboolean streams_aware;
+
+  gint min_live_fragment_distance; /* live start distance from the end, in fragments */
 };
 
 struct _GstHLSDemuxClass

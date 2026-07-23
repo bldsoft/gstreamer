@@ -77,6 +77,8 @@ struct _GstM3U8
   GstClockTime duration;              /* cached total duration */
   gint discont_sequence;              /* currently expected EXT-X-DISCONTINUITY-SEQUENCE */
 
+  gint min_live_fragment_distance;    /* live start distance from the end, in fragments */
+
   /*< private > */
   gchar *last_data;
   GMutex lock;
@@ -146,6 +148,9 @@ GstClockTime       gst_m3u8_get_target_duration  (GstM3U8 * m3u8);
 gchar *            gst_m3u8_get_uri              (GstM3U8 * m3u8);
 
 gboolean           gst_m3u8_is_live              (GstM3U8 * m3u8);
+
+void               gst_m3u8_set_min_live_fragment_distance (GstM3U8 * m3u8,
+                                                            gint distance);
 
 gboolean           gst_m3u8_get_seek_range       (GstM3U8 * m3u8,
                                                   gint64  * start,

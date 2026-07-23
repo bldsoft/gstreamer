@@ -53,6 +53,7 @@ gst_m3u8_new (void)
   m3u8->sequence_position = 0;
   m3u8->highest_sequence_number = -1;
   m3u8->duration = GST_CLOCK_TIME_NONE;
+  m3u8->min_live_fragment_distance = GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE;
 
   g_mutex_init (&m3u8->lock);
   m3u8->ref_count = 1;
@@ -890,9 +891,9 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
             self->last_file_end - GST_M3U8_MEDIA_FILE (file->data)->duration;
       }
 
-      /* for live streams, start GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE from
+      /* for live streams, start min_live_fragment_distance fragments from
        * the end of the playlist. See section 6.3.3 of HLS draft */
-      for (i = 0; i < GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE && file->prev &&
+      for (i = 0; i < self->min_live_fragment_distance && file->prev &&
           GST_M3U8_MEDIA_FILE (file->prev->data)->duration <= sequence_pos;
           ++i) {
         file = file->prev;
@@ -1094,10 +1095,10 @@ gst_m3u8_advance_fragment (GstM3U8 * m3u8, gboolean forward)
 
       /* Resync sequence number if the above has failed for live streams */
       if (m3u8->current_file == NULL && GST_M3U8_IS_LIVE (m3u8)) {
-        /* for live streams, start GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE from
+        /* for live streams, start min_live_fragment_distance fragments from
            the end of the playlist. See section 6.3.3 of HLS draft */
         gint pos =
-            g_list_length (m3u8->files) - GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE;
+            g_list_length (m3u8->files) - m3u8->min_live_fragment_distance;
         m3u8->current_file = g_list_nth (m3u8->files, pos >= 0 ? pos : 0);
         m3u8->current_file_duration =
             GST_M3U8_MEDIA_FILE (m3u8->current_file->data)->duration;
@@ -1206,6 +1207,17 @@ gst_m3u8_is_live (GstM3U8 * m3u8)
   return is_live;
 }
 
+void
+gst_m3u8_set_min_live_fragment_distance (GstM3U8 * m3u8, gint distance)
+{
+  g_return_if_fail (m3u8 != NULL);
+  g_return_if_fail (distance >= 1);
+
+  GST_M3U8_LOCK (m3u8);
+  m3u8->min_live_fragment_distance = distance;
+  GST_M3U8_UNLOCK (m3u8);
+}
+
 gchar *
 uri_join (const gchar * uri1, const gchar * uri2)
 {
@@ -1280,9 +1292,9 @@ gst_m3u8_get_seek_range (GstM3U8 * m3u8, gint64 * start, gint64 * stop)
 
   if (GST_M3U8_IS_LIVE (m3u8)) {
     /* min_distance is used to make sure the seek range is never closer than
-       GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE fragments from the end of a live
+       min_live_fragment_distance fragments from the end of a live
        playlist - see 6.3.3. "Playing the Playlist file" of the HLS draft */
-    min_distance = GST_M3U8_LIVE_MIN_FRAGMENT_DISTANCE;
+    min_distance = m3u8->min_live_fragment_distance;
   }
   count = g_list_length (m3u8->files);
 
