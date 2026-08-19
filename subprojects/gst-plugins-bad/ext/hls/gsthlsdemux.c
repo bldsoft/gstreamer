@@ -686,7 +686,8 @@ gst_hls_demux_setup_streams (GstAdaptiveDemux * demux)
         if (!g_strcmp0 (media->uri, old_media->uri))
           GST_DEBUG_OBJECT (demux, "Identical stream !");
         if (media->mtype == GST_HLS_MEDIA_TYPE_AUDIO ||
-            media->mtype == GST_HLS_MEDIA_TYPE_VIDEO) {
+            media->mtype == GST_HLS_MEDIA_TYPE_VIDEO ||
+            media->mtype == GST_HLS_MEDIA_TYPE_SUBTITLES) {
           hlsstream =
               find_adaptive_stream_for_playlist (demux, old_media->playlist);
           if (!hlsstream)
@@ -730,7 +731,8 @@ gst_hls_demux_setup_streams (GstAdaptiveDemux * demux)
           gst_hls_media_type_get_name (i), media->name, media->uri);
       create_stream_for_playlist (demux, media->playlist, FALSE,
           (media->mtype == GST_HLS_MEDIA_TYPE_VIDEO
-              || media->mtype == GST_HLS_MEDIA_TYPE_AUDIO));
+              || media->mtype == GST_HLS_MEDIA_TYPE_AUDIO
+              || media->mtype == GST_HLS_MEDIA_TYPE_SUBTITLES));
 
       mlist = mlist->next;
     }
