@@ -757,7 +757,7 @@ tsmux_stream_write_pes_header (TsMuxStream * stream, guint8 * data)
     /* If this stream has PES data alignment *and* this PES is the start of
      * an input buffer, set the data aligment mark */
     if (stream->pi.flags & TSMUX_PACKET_FLAG_PES_DATA_ALIGNMENT &&
-        stream->cur_buffer_consumed == 0) {
+        (stream->cur_buffer_consumed == 0 || stream->is_dvb_sub)) {
       TS_DEBUG ("Marking data_alignment flag for this PES");
       flags |= 0x4;
     }
