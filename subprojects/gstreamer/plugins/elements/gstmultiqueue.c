@@ -269,6 +269,11 @@ enum
 
 #define DEFAULT_MINIMUM_INTERLEAVE (250 * GST_MSECOND)
 
+/* Sparse not-linked streams stop waiting for the linked streams past this
+ * offset. Their queue has no time limit, so a bogus timestamp far in the
+ * future would otherwise make it grow unbounded. */
+#define SPARSE_NOT_LINKED_MAX_WAIT ((GstClockTimeDiff)(10 * GST_SECOND))
+
 enum
 {
   PROP_0,
@@ -2255,7 +2260,19 @@ next:
           GST_STIME_ARGS (next_time));
 
       if (mq->sync_by_running_time) {
-        if (sq->group_high_time == GST_CLOCK_STIME_NONE) {
+        if (sq->is_sparse) {
+          /* Same as below, but give up on offsets too large to be genuine */
+          if (sq->group_high_time == GST_CLOCK_STIME_NONE) {
+            should_wait = GST_CLOCK_STIME_IS_VALID (next_time) &&
+                (mq->high_time == GST_CLOCK_STIME_NONE ||
+                (next_time > mq->high_time &&
+                 next_time - mq->high_time <= SPARSE_NOT_LINKED_MAX_WAIT));
+          } else {
+            should_wait = GST_CLOCK_STIME_IS_VALID (next_time) &&
+                next_time > sq->group_high_time &&
+                next_time - sq->group_high_time <= SPARSE_NOT_LINKED_MAX_WAIT;
+          }
+        } else if (sq->group_high_time == GST_CLOCK_STIME_NONE) {
           should_wait = GST_CLOCK_STIME_IS_VALID (next_time) &&
               (mq->high_time == GST_CLOCK_STIME_NONE
               || next_time > mq->high_time);
@@ -2298,7 +2315,18 @@ next:
             GST_STIME_ARGS (mq->high_time));
 
         if (mq->sync_by_running_time) {
-          if (sq->group_high_time == GST_CLOCK_STIME_NONE) {
+          if (sq->is_sparse) {
+            if (sq->group_high_time == GST_CLOCK_STIME_NONE) {
+              should_wait = GST_CLOCK_STIME_IS_VALID (next_time) &&
+                  (mq->high_time == GST_CLOCK_STIME_NONE ||
+                  (next_time > mq->high_time &&
+                   next_time - mq->high_time <= SPARSE_NOT_LINKED_MAX_WAIT));
+            } else {
+              should_wait = GST_CLOCK_STIME_IS_VALID (next_time) &&
+                  next_time > sq->group_high_time &&
+                  next_time - sq->group_high_time <= SPARSE_NOT_LINKED_MAX_WAIT;
+            }
+          } else if (sq->group_high_time == GST_CLOCK_STIME_NONE) {
             should_wait = GST_CLOCK_STIME_IS_VALID (next_time) &&
                 (mq->high_time == GST_CLOCK_STIME_NONE
                 || next_time > mq->high_time);
@@ -3044,6 +3072,24 @@ wake_up_next_non_linked (GstMultiQueue * mq)
       GstSingleQueue *sq = (GstSingleQueue *) tmp->data;
       if (sq->srcresult == GST_FLOW_NOT_LINKED) {
         GstClockTimeDiff high_time;
+
+        if (sq->is_sparse) {
+          /* Wake only when this pad would actually stop waiting. high_time
+           * caught up, or the gap is past the cap. Waking it every time
+           * lets two waiting sparse pads signal each other forever. */
+          if (GST_CLOCK_STIME_IS_VALID (sq->group_high_time))
+            high_time = sq->group_high_time;
+          else
+            high_time = mq->high_time;
+
+          if (!GST_CLOCK_STIME_IS_VALID (sq->next_time) ||
+              sq->next_time <= high_time ||
+              sq->next_time - high_time > SPARSE_NOT_LINKED_MAX_WAIT) {
+            GST_LOG_ID (sq->debug_id, "Waking up sparse singlequeue");
+            g_cond_signal (&sq->turn);
+          }
+          continue;
+        }
 
         if (GST_CLOCK_STIME_IS_VALID (sq->group_high_time))
           high_time = sq->group_high_time;
