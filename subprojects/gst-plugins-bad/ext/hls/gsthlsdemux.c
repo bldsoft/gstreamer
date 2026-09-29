@@ -842,6 +842,18 @@ gst_hls_demux_process_manifest (GstAdaptiveDemux * demux, GstBuffer * buf)
     return FALSE;
   }
 
+  /* Simple media playlist: reload from manifest_uri, not the temporary
+   * redirect target (may be a short-lived tokenized URL). The redirect target
+   * stays as base_uri for segment resolution. */
+  if (hlsdemux->master->is_simple && demux->manifest_base_uri) {
+    GstHLSVariantStream *media = hlsdemux->master->default_variant;
+
+    g_free (media->uri);
+    media->uri = g_strdup (demux->manifest_uri);
+    gst_m3u8_set_uri (media->m3u8, demux->manifest_uri,
+        demux->manifest_base_uri, media->name);
+  }
+
   /* select the initial variant stream */
   if (demux->connection_speed == 0) {
     variant = hlsdemux->master->default_variant;

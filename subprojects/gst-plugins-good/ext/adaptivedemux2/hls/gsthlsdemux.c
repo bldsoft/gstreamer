@@ -704,6 +704,22 @@ gst_hls_demux_process_initial_manifest (GstAdaptiveDemux * demux,
     return FALSE;
   }
 
+  /* Simple media playlist: reload from manifest_uri, not the temporary
+   * redirect target (may be a short-lived tokenized URL). The redirect target
+   * stays as base_uri for segment resolution. */
+  if (hlsdemux->master->is_simple && demux->manifest_uri) {
+    GstHLSVariantStream *media = hlsdemux->master->default_variant;
+
+    if (media && g_strcmp0 (media->uri, demux->manifest_uri) != 0) {
+      GST_INFO_OBJECT (demux,
+          "Simple media playlist reached via redirect. "
+          "Reloading from %s, resolving segments against %s",
+          demux->manifest_uri, media->uri);
+      g_free (media->uri);
+      media->uri = g_strdup (demux->manifest_uri);
+    }
+  }
+
   if (hlsdemux->master->is_simple) {
     simple_media_playlist =
         gst_hls_media_playlist_parse (playlist, GST_CLOCK_TIME_NONE,
