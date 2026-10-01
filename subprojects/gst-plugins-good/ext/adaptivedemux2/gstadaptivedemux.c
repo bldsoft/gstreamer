@@ -2568,6 +2568,12 @@ handle_stream_selection (GstAdaptiveDemux * demux, GList * streams,
 
   g_atomic_int_set (&demux->priv->requested_selection_seqnum, seqnum);
 
+  /* Wake up the output loop if it's waiting for data. It might be waiting
+   * on a track we just deselected and whose stream we stopped, in which
+   * case no data will ever arrive. It will re-check the selection and
+   * remove unused output slots */
+  g_cond_signal (&demux->priv->tracks_add);
+
 select_streams_done:
   demux_update_buffering_locked (demux);
   demux_post_buffering_locked (demux);
@@ -3220,6 +3226,43 @@ gst_adaptive_demux_send_initial_events (GstAdaptiveDemux * demux,
 }
 
 /*
+ * Remove all output slots whose track is draining (i.e. deselected) and
+ * which don't have a pending replacement track.
+ *
+ * Called with TRACKS_LOCK taken
+ */
+static void
+remove_unused_output_slots_locked (GstAdaptiveDemux * demux)
+{
+  GList *tmp;
+
+  for (tmp = demux->priv->outputs; tmp;) {
+    OutputSlot *slot = (OutputSlot *) tmp->data;
+    /* We should never has slots without target tracks */
+    g_assert (slot->track);
+    if (slot->track->draining && !slot->pending_track) {
+      GstAdaptiveDemux2Stream *stream;
+
+      GST_DEBUG_OBJECT (demux, "Output for track '%s' is no longer used",
+          slot->track->id);
+      slot->track->active = FALSE;
+
+      /* If the stream feeding this track is stopped, flush and clear
+       * the track now that it's going inactive. If the stream was not
+       * found, it means we advanced past that period already (and the
+       * stream was stopped and discarded) */
+      stream = find_stream_for_track_locked (demux, slot->track);
+      if (stream != NULL && !gst_adaptive_demux2_stream_is_running (stream))
+        gst_adaptive_demux_track_flush (slot->track);
+
+      tmp = demux->priv->outputs = g_list_remove (demux->priv->outputs, slot);
+      gst_adaptive_demux_output_slot_free (demux, slot);
+    } else
+      tmp = tmp->next;
+  }
+}
+
+/*
  * Called with TRACKS_LOCK taken
  */
 static void
@@ -3296,30 +3339,7 @@ check_and_handle_selection_update_locked (GstAdaptiveDemux * demux)
   }
 
   /* Finally check all slots have a current/pending track. If not remove it */
-  for (tmp = demux->priv->outputs; tmp;) {
-    OutputSlot *slot = (OutputSlot *) tmp->data;
-    /* We should never has slots without target tracks */
-    g_assert (slot->track);
-    if (slot->track->draining && !slot->pending_track) {
-      GstAdaptiveDemux2Stream *stream;
-
-      GST_DEBUG_OBJECT (demux, "Output for track '%s' is no longer used",
-          slot->track->id);
-      slot->track->active = FALSE;
-
-      /* If the stream feeding this track is stopped, flush and clear
-       * the track now that it's going inactive. If the stream was not
-       * found, it means we advanced past that period already (and the
-       * stream was stopped and discarded) */
-      stream = find_stream_for_track_locked (demux, slot->track);
-      if (stream != NULL && !gst_adaptive_demux2_stream_is_running (stream))
-        gst_adaptive_demux_track_flush (slot->track);
-
-      tmp = demux->priv->outputs = g_list_remove (demux->priv->outputs, slot);
-      gst_adaptive_demux_output_slot_free (demux, slot);
-    } else
-      tmp = tmp->next;
-  }
+  remove_unused_output_slots_locked (demux);
 
   demux->priv->current_selection_seqnum = requested_selection_seqnum;
   msg = all_selected_tracks_are_active (demux, requested_selection_seqnum);
@@ -3449,6 +3469,7 @@ gst_adaptive_demux_output_loop (GstAdaptiveDemux * demux)
   GstClockTimeDiff global_output_position = GST_CLOCK_STIME_NONE;
   gboolean wait_for_data = FALSE;
   gboolean all_tracks_empty;
+  gboolean remove_unused_slots;
   GstFlowReturn ret;
 
   GST_DEBUG_OBJECT (demux, "enter");
@@ -3461,24 +3482,38 @@ gst_adaptive_demux_output_loop (GstAdaptiveDemux * demux)
     goto pause;
   }
 
-  /* If the selection changed, handle it */
-  check_and_handle_selection_update_locked (demux);
-
 restart:
   ret = GST_FLOW_OK;
   global_output_position = GST_CLOCK_STIME_NONE;
   all_tracks_empty = TRUE;
+  remove_unused_slots = FALSE;
 
   if (wait_for_data) {
-    GST_DEBUG_OBJECT (demux, "Waiting for data");
-    g_cond_wait (&demux->priv->tracks_add, &demux->priv->tracks_lock);
-    GST_DEBUG_OBJECT (demux, "Done waiting for data");
-    if (demux->priv->flushing) {
-      ret = GST_FLOW_FLUSHING;
-      goto pause;
+    /* Don't wait if the selection changed since the output slots were last
+     * checked. The tracks we would wait on might have been deselected and
+     * their streams stopped, so no data would ever arrive. The
+     * requested_selection_seqnum is updated with the TRACKS_LOCK held and
+     * the tracks_add condition is signalled, so checking it here (with the
+     * lock held) guarantees we can't miss a selection change. */
+    if (g_atomic_int_get (&demux->priv->requested_selection_seqnum) ==
+        demux->priv->current_selection_seqnum) {
+      GST_DEBUG_OBJECT (demux, "Waiting for data");
+      g_cond_wait (&demux->priv->tracks_add, &demux->priv->tracks_lock);
+      GST_DEBUG_OBJECT (demux, "Done waiting for data");
+      if (demux->priv->flushing) {
+        ret = GST_FLOW_FLUSHING;
+        goto pause;
+      }
+    } else {
+      GST_DEBUG_OBJECT (demux, "Selection changed, not waiting for data");
     }
     wait_for_data = FALSE;
   }
+
+  /* If the selection changed, handle it. This is done on every iteration
+   * (and not only when entering the loop) since the selection can change
+   * while we were waiting for data or while the TRACKS_LOCK was released */
+  check_and_handle_selection_update_locked (demux);
 
   /* Grab/Recalculate current global output position
    * This is the minimum pending output position of all tracks used for output
@@ -3526,9 +3561,23 @@ restart:
       track->waiting_add = FALSE;
       all_tracks_empty = FALSE;
     } else if (!track->eos) {
-      GST_DEBUG_ID (track->id, "Need timed data");
-      all_tracks_empty = FALSE;
-      wait_for_data = track->waiting_add = TRUE;
+      GstAdaptiveDemux2Stream *stream = NULL;
+
+      /* A deselected (draining) track without a replacement whose stream
+       * was stopped will never receive any more data. Don't wait for it,
+       * its output slot will be removed below */
+      if (track->draining && !slot->pending_track)
+        stream = find_stream_for_track_locked (demux, track);
+      if (track->draining && !slot->pending_track && (stream == NULL
+              || !gst_adaptive_demux2_stream_is_running (stream))) {
+        GST_DEBUG_ID (track->id,
+            "Track is draining and its stream is stopped, not waiting for data");
+        remove_unused_slots = TRUE;
+      } else {
+        GST_DEBUG_ID (track->id, "Need timed data");
+        all_tracks_empty = FALSE;
+        wait_for_data = track->waiting_add = TRUE;
+      }
     } else {
       GST_DEBUG_ID (track->id, "Track is EOS, not waiting for timed data");
 
@@ -3536,6 +3585,13 @@ restart:
         all_tracks_empty = FALSE;
       }
     }
+  }
+
+  if (remove_unused_slots) {
+    /* Remove the slots of draining tracks that will never receive data
+     * anymore, so that they don't block the output */
+    remove_unused_output_slots_locked (demux);
+    goto restart;
   }
 
   if (wait_for_data)
