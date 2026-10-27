@@ -122,6 +122,8 @@ gst_base_ts_mux_pad_reset (GstBaseTsMuxPad * pad)
   if (pad->codec_data)
     gst_buffer_replace (&pad->codec_data, NULL);
 
+  gst_caps_replace (&pad->caps, NULL);
+
   /* reference owned elsewhere */
   pad->stream = NULL;
   pad->prog = NULL;
@@ -1044,6 +1046,8 @@ gst_base_ts_mux_create_or_update_stream (GstBaseTsMux * mux,
   ts_pad->stream->subtitling_type = ts_pad->subtitling_type;
   ts_pad->stream->composition_page_id = ts_pad->composition_page_id;
   ts_pad->stream->ancillary_page_id = ts_pad->ancillary_page_id;
+
+  gst_caps_replace (&ts_pad->caps, caps);
 
   return GST_FLOW_OK;
 
@@ -2391,6 +2395,12 @@ gst_base_ts_mux_sink_event (GstAggregator * agg, GstAggregatorPad * agg_pad,
       gst_event_parse_caps (event, &caps);
       if (!caps || !gst_caps_is_fixed (caps)) {
         g_mutex_unlock (&mux->lock);
+        break;
+      }
+
+      if (ts_pad->caps && gst_caps_is_equal (caps, ts_pad->caps)) {
+        g_mutex_unlock (&mux->lock);
+        res = TRUE;
         break;
       }
 

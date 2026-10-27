@@ -114,6 +114,9 @@ struct _GstBaseTsMuxPad
   /* optional codec data available in the caps */
   GstBuffer *codec_data;
 
+  /* caps the stream was last configured from */
+  GstCaps *caps;
+
   /* Opaque data pointer to a structure used by the prepare function */
   gpointer prepare_data;
 
