@@ -384,7 +384,10 @@ gst_hls_sink_handle_message (GstBin * bin, GstMessage * message)
 
       filename = gst_structure_get_string (structure, "filename");
       gst_structure_get_clock_time (structure, "running-time", &running_time);
-      duration = running_time - sink->last_running_time;
+      if (!GST_CLOCK_TIME_IS_VALID (running_time))
+        running_time = sink->last_running_time;
+      duration = running_time > sink->last_running_time ?
+          running_time - sink->last_running_time : 0;
 
       chunk_time = sink->last_running_time / (double) GST_SECOND +
           sink->program_date_time_shift / (double) GST_SECOND;
@@ -684,14 +687,18 @@ out:
 static void
 gst_hls_sink_check_schedule_next_key_unit (GstHlsSink * sink, GstBuffer * buf)
 {
-  GstClockTime timestamp;
+  GstClockTime timestamp, running_time;
 
   timestamp = GST_BUFFER_TIMESTAMP (buf);
   if (!GST_CLOCK_TIME_IS_VALID (timestamp))
     return;
 
-  sink->last_running_time = gst_segment_to_running_time (&sink->segment,
+  running_time = gst_segment_to_running_time (&sink->segment,
       GST_FORMAT_TIME, timestamp);
+  if (!GST_CLOCK_TIME_IS_VALID (running_time))
+    return;
+
+  sink->last_running_time = running_time;
   schedule_next_key_unit (sink);
 }
 
