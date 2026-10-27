@@ -1499,7 +1499,8 @@ gst_base_ts_mux_collect_packet (GstBaseTsMux * mux, GstBuffer * buf)
 
 static GstEvent *
 check_pending_key_unit_event (GstEvent * pending_event, GstSegment * segment,
-    GstClockTime timestamp, guint flags, GstClockTime pending_key_unit_ts)
+    GstClockTime timestamp, guint flags, GstClockTime pending_key_unit_ts,
+    GstSegment * out_segment, GstClockTimeDiff out_offset)
 {
   GstClockTime running_time, stream_time;
   gboolean all_headers;
@@ -1526,6 +1527,15 @@ check_pending_key_unit_event (GstEvent * pending_event, GstSegment * segment,
   if (flags & GST_BUFFER_FLAG_DELTA_UNIT) {
     GST_INFO ("pending force key unit, waiting for keyframe");
     goto out;
+  }
+
+  /* Report the key unit on the output timeline, like the buffers it precedes */
+  if (GST_CLOCK_TIME_IS_VALID (timestamp) &&
+      GST_CLOCK_STIME_IS_VALID (out_offset)) {
+    timestamp = MAX ((GstClockTimeDiff) timestamp + out_offset, 0);
+    segment = out_segment;
+    running_time = gst_segment_to_running_time (segment, GST_FORMAT_TIME,
+        timestamp);
   }
 
   stream_time = gst_segment_to_stream_time (segment,
@@ -1689,7 +1699,9 @@ gst_base_ts_mux_aggregate_buffer (GstBaseTsMux * mux,
     g_mutex_unlock (&mux->lock);
     event = check_pending_key_unit_event (mux->force_key_unit_event,
         &agg_pad->segment, GST_BUFFER_PTS (buf),
-        GST_BUFFER_FLAGS (buf), mux->pending_key_unit_ts);
+        GST_BUFFER_FLAGS (buf), mux->pending_key_unit_ts,
+        &GST_AGGREGATOR_PAD (GST_AGGREGATOR_SRC_PAD (mux))->segment,
+        mux->output_ts_offset);
     if (event) {
       GstClockTime running_time;
       guint count;
@@ -2684,6 +2696,27 @@ gst_base_ts_mux_src_event (GstAggregator * agg, GstEvent * event)
 
       if (!all_headers)
         break;
+
+      /* Requested on the output timeline, but compared against and forwarded
+       * to the inputs */
+      if (GST_CLOCK_TIME_IS_VALID (running_time) &&
+          GST_CLOCK_STIME_IS_VALID (mux->output_ts_offset)) {
+        GstClockTime position = gst_segment_position_from_running_time
+            (&GST_AGGREGATOR_PAD (agg->srcpad)->segment, GST_FORMAT_TIME,
+            running_time);
+
+        if (GST_CLOCK_TIME_IS_VALID (position)) {
+          GstEvent *in_event;
+
+          running_time =
+              MAX ((GstClockTimeDiff) position - mux->output_ts_offset, 0);
+          in_event = gst_video_event_new_upstream_force_key_unit (running_time,
+              all_headers, count);
+          gst_event_set_seqnum (in_event, gst_event_get_seqnum (event));
+          gst_event_unref (event);
+          event = in_event;
+        }
+      }
 
       mux->pending_key_unit_ts = running_time;
       gst_event_replace (&mux->force_key_unit_event, event);
